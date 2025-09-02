@@ -1,5 +1,6 @@
 import React, { useRef, useEffect } from 'react';
 import * as THREE from 'three';
+import floorLayout from './floorLayout.json';
 
 const WebGLScene = () => {
   const mountRef = useRef(null);
@@ -12,6 +13,11 @@ const WebGLScene = () => {
   const raycasterRef = useRef(new THREE.Raycaster());
   const hoveredBoxRef = useRef(null);
 
+  // Helper function to parse meter values
+  const parseMeters = (value) => {
+    return parseFloat(value.replace('m', ''));
+  };
+
   useEffect(() => {
     const width = window.innerWidth;
     const height = window.innerHeight;
@@ -22,9 +28,10 @@ const WebGLScene = () => {
     scene.background = new THREE.Color(0x222222);
     sceneRef.current = scene;
 
-    // Camera setup
+    // Camera setup - position to see the full 20x10m floor
     const camera = new THREE.PerspectiveCamera(75, width / height, 0.1, 1000);
-    camera.position.z = 8;
+    camera.position.set(0, 15, 8); // Higher up and angled down to see full floor
+    camera.lookAt(0, -1, 0); // Look at the floor
 
     // Renderer setup
     const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -44,10 +51,14 @@ const WebGLScene = () => {
     directionalLight.castShadow = true;
     scene.add(directionalLight);
 
-    // Create polyplane as floor
-    const polyplaneGeometry = new THREE.PlaneGeometry(8, 8);
+    // Get floor dimensions from JSON
+    const floorWidth = parseMeters(floorLayout.rootDimensions.width);
+    const floorHeight = parseMeters(floorLayout.rootDimensions.height);
+
+    // Create polyplane as floor using JSON dimensions
+    const polyplaneGeometry = new THREE.PlaneGeometry(floorWidth, floorHeight);
     const polyplaneMaterial = new THREE.MeshLambertMaterial({ 
-      color: 0x444444,
+      color: 0x333333,
       transparent: true,
       opacity: 0.9
     });
@@ -59,36 +70,60 @@ const WebGLScene = () => {
     polyplaneRef.current = polyplane;
     scene.add(polyplane);
 
-    // Create 6 boxes with randomized sizes on the floor
-    const boxMaterial = new THREE.MeshLambertMaterial({ color: 0x66aaff });
-    const boxHoverMaterial = new THREE.MeshLambertMaterial({ color: 0xff6666 });
-    
+    // Create booths and stages from JSON layout
     const boxes = [];
-    const positions = [
-      [-2, 1], [0, 1], [2, 1],
-      [-2, -1], [0, -1], [2, -1]
-    ];
-
-    positions.forEach((pos, index) => {
-      // Randomize box dimensions
-      const width = 0.3 + Math.random() * 0.6; // 0.3 to 0.9
-      const height = 0.4 + Math.random() * 0.8; // 0.4 to 1.2
-      const depth = 0.3 + Math.random() * 0.6; // 0.3 to 0.9
+    const hoverMaterial = new THREE.MeshLambertMaterial({ color: 0xff6666 });
+    
+    // Create booths
+    floorLayout.booths.forEach((booth, index) => {
+      const width = parseMeters(booth.width);
+      const depth = parseMeters(booth.height);  
+      const height = 0.3; // Fixed booth height (vertical dimension)
+      const x = parseMeters(booth.x) - floorWidth/2 + width/2; // Center coordinates
+      const y = parseMeters(booth.y) - floorHeight/2 + depth/2;
       
-      const boxGeometry = new THREE.BoxGeometry(width, height, depth);
-      const box = new THREE.Mesh(boxGeometry, boxMaterial.clone());
+      const boxGeometry = new THREE.BoxGeometry(width, depth, height); // width, depth, height
+      const boxMaterial = new THREE.MeshLambertMaterial({ color: booth.color });
+      const box = new THREE.Mesh(boxGeometry, boxMaterial);
       
       // Position on floor surface (relative to polyplane's local coordinates)
       // Since polyplane is rotated -90° around X, its local Z points up
-      box.position.set(pos[0], pos[1], height/2);
+      box.position.set(x, y, height/2);
       box.castShadow = true;
       box.userData = { 
-        index, 
-        originalMaterial: box.material.clone(),
-        hoverMaterial: boxHoverMaterial.clone()
+        id: booth.id,
+        name: booth.name,
+        type: 'booth',
+        originalMaterial: boxMaterial.clone(),
+        hoverMaterial: hoverMaterial.clone()
       };
       boxes.push(box);
-      polyplane.add(box); // Add to polyplane so they rotate together
+      polyplane.add(box);
+    });
+
+    // Create stages
+    floorLayout.stages.forEach((stage, index) => {
+      const width = parseMeters(stage.width);
+      const depth = parseMeters(stage.height);
+      const height = 0.2; // Stages are lower (vertical dimension)
+      const x = parseMeters(stage.x) - floorWidth/2 + width/2;
+      const y = parseMeters(stage.y) - floorHeight/2 + depth/2;
+      
+      const stageGeometry = new THREE.BoxGeometry(width, depth, height); // width, depth, height
+      const stageMaterial = new THREE.MeshLambertMaterial({ color: stage.color });
+      const stageBox = new THREE.Mesh(stageGeometry, stageMaterial);
+      
+      stageBox.position.set(x, y, height/2);
+      stageBox.castShadow = true;
+      stageBox.userData = { 
+        id: stage.id,
+        name: stage.name,
+        type: 'stage',
+        originalMaterial: stageMaterial.clone(),
+        hoverMaterial: hoverMaterial.clone()
+      };
+      boxes.push(stageBox);
+      polyplane.add(stageBox);
     });
     
     boxesRef.current = boxes;
@@ -108,9 +143,9 @@ const WebGLScene = () => {
         hoveredBoxRef.current = null;
       }
 
-      // Set new hover - filter for boxes only
+      // Set new hover - filter for booths and stages only
       const boxIntersects = intersects.filter(intersect => 
-        intersect.object.userData && intersect.object.userData.index !== undefined
+        intersect.object.userData && (intersect.object.userData.type === 'booth' || intersect.object.userData.type === 'stage')
       );
       
       if (boxIntersects.length > 0) {
@@ -126,11 +161,11 @@ const WebGLScene = () => {
     const animate = () => {
       animationRef.current = requestAnimationFrame(animate);
       
-      // Rotate the polyplane slowly (1 rotation per 30 seconds)
-      // 2π radians per 30 seconds = 0.209 radians per second
-      // At 60fps: 0.209/60 ≈ 0.0035 radians per frame
+      // Rotate the polyplane slowly (1 rotation per 60 seconds)
+      // 2π radians per 60 seconds = 0.105 radians per second
+      // At 60fps: 0.105/60 ≈ 0.00175 radians per frame
       if (polyplaneRef.current) {
-        polyplaneRef.current.rotation.z += 0.0035;
+        polyplaneRef.current.rotation.z += 0.00175;
       }
 
       renderer.render(scene, camera);
