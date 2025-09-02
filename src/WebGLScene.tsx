@@ -1,6 +1,6 @@
 import React, { useRef, useEffect } from 'react';
 import * as THREE from 'three';
-import { AreaData, Booth, Stage, BoothStatus, StatusColors } from './types/booth';
+import { AreaData, BoothStatus, StatusColors } from './types/booth';
 
 interface WebGLSceneProps {
   areaData: AreaData | null;

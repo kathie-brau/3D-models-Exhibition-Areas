@@ -104,11 +104,13 @@ export function useAreaData(areaId: string, hotReload: boolean = true) {
         clearInterval(intervalRef.current);
       }
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [areaId, hotReload]);
 
   // Merge with sheet data whenever booth statuses change (every 10 seconds)
   useEffect(() => {
     mergeWithSheetData();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [boothStatuses]);
 
   return { data, loading: loading || switching, error };
