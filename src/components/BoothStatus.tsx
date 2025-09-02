@@ -17,6 +17,7 @@ export default function BoothStatus({ areaData }: BoothStatusProps) {
   const soldBooths = statusCounts.sold || 0;
   const reservedBooths = statusCounts.reserved || 0;
   const availableBooths = statusCounts.available || 0;
+  const nilBooths = statusCounts.nil || 0;
 
   return (
     <div style={{
@@ -42,6 +43,9 @@ export default function BoothStatus({ areaData }: BoothStatusProps) {
         </div>
         <div style={{ margin: '5px 0' }}>
           <span style={{ color: '#cccccc' }}>●</span> Available: {availableBooths}
+        </div>
+        <div style={{ margin: '5px 0' }}>
+          <span style={{ color: '#ff69b4' }}>●</span> Missing Data: {nilBooths}
         </div>
         <hr style={{ margin: '10px 0', border: '1px solid #444' }} />
         <div style={{ fontWeight: 'bold' }}>

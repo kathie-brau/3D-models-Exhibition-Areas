@@ -24,9 +24,12 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData }) => {
 
   useEffect(() => {
     if (!areaData) return;
+    
+    const currentMount = mountRef.current;
+    if (!currentMount) return;
+
     const width = window.innerWidth;
     const height = window.innerHeight;
-    const currentMount = mountRef.current;
 
     // Scene setup
     const scene = new THREE.Scene();
@@ -85,7 +88,8 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData }) => {
     const statusColors: StatusColors = {
       'sold': 0x66aaff,      // Blue (matches UI)
       'reserved': 0xffaa66,  // Orange (matches UI)
-      'available': 0xcccccc  // Gray (matches UI)
+      'available': 0xcccccc, // Gray (matches UI)
+      'nil': 0xff69b4        // Pink - missing data indicator
     };
     
     // Helper function to create text texture
@@ -105,7 +109,8 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData }) => {
       const statusTextColors = {
         'sold': '#66aaff',
         'reserved': '#ffaa66', 
-        'available': '#cccccc'
+        'available': '#cccccc',
+        'nil': '#ff69b4'
       };
       
       context.fillStyle = statusTextColors[status] || '#cccccc';

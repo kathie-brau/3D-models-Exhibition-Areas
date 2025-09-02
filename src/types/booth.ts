@@ -1,3 +1,5 @@
+export type BoothStatus = 'sold' | 'reserved' | 'available' | 'nil';
+
 export interface Booth {
   id: string;
   name: string;
@@ -5,7 +7,7 @@ export interface Booth {
   y: string;
   width: string;
   height: string;
-  status: 'sold' | 'reserved' | 'available';
+  status: BoothStatus;
   color: string;
 }
 
@@ -31,10 +33,9 @@ export interface AreaData {
   stages: Stage[];
 }
 
-export type BoothStatus = 'sold' | 'reserved' | 'available';
-
 export interface StatusColors {
   sold: number;
   reserved: number;
   available: number;
+  nil: number;
 }
