@@ -1,0 +1,80 @@
+{
+  "areaName": "Technology Pavilion",
+  "rootDimensions": {
+    "width": "15m",
+    "height": "12m"
+  },
+  "booths": [
+    {
+      "id": "booth7",
+      "name": "Crane Norway",
+      "x": "2m",
+      "y": "2m",
+      "width": "3m",
+      "height": "2m",
+      "status": "sold",
+      "color": "#66aaff"
+    },
+    {
+      "id": "booth8",
+      "name": "Element Logic AS",
+      "x": "6m",
+      "y": "2m",
+      "width": "3m",
+      "height": "2m",
+      "status": "sold",
+      "color": "#66aaff"
+    },
+    {
+      "id": "booth9",
+      "name": "Available",
+      "x": "10m",
+      "y": "2m",
+      "width": "3m",
+      "height": "2m",
+      "status": "available",
+      "color": "#cccccc"
+    },
+    {
+      "id": "booth10",
+      "name": "Reserved",
+      "x": "2m",
+      "y": "6m",
+      "width": "3m",
+      "height": "2m",
+      "status": "reserved",
+      "color": "#ffaa66"
+    },
+    {
+      "id": "booth11",
+      "name": "Available",
+      "x": "6m",
+      "y": "6m",
+      "width": "3m",
+      "height": "2m",
+      "status": "available",
+      "color": "#cccccc"
+    },
+    {
+      "id": "booth12",
+      "name": "Available",
+      "x": "10m",
+      "y": "6m",
+      "width": "3m",
+      "height": "2m",
+      "status": "available",
+      "color": "#cccccc"
+    }
+  ],
+  "stages": [
+    {
+      "id": "tech_demo",
+      "name": "Tech Demo Area",
+      "x": "2m",
+      "y": "9m",
+      "width": "11m",
+      "height": "2m",
+      "color": "#4455aa"
+    }
+  ]
+}

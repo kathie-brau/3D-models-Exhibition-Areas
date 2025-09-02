@@ -1,0 +1,90 @@
+{
+  "areaName": "Innovation Zone",
+  "rootDimensions": {
+    "width": "18m",
+    "height": "8m"
+  },
+  "booths": [
+    {
+      "id": "booth13",
+      "name": "Available",
+      "x": "1m",
+      "y": "1m",
+      "width": "2m",
+      "height": "2m",
+      "status": "available",
+      "color": "#cccccc"
+    },
+    {
+      "id": "booth14",
+      "name": "Available",
+      "x": "4m",
+      "y": "1m",
+      "width": "2m",
+      "height": "2m",
+      "status": "available",
+      "color": "#cccccc"
+    },
+    {
+      "id": "booth15",
+      "name": "Reserved",
+      "x": "7m",
+      "y": "1m",
+      "width": "2m",
+      "height": "2m",
+      "status": "reserved",
+      "color": "#ffaa66"
+    },
+    {
+      "id": "booth16",
+      "name": "Available",
+      "x": "10m",
+      "y": "1m",
+      "width": "2m",
+      "height": "2m",
+      "status": "available",
+      "color": "#cccccc"
+    },
+    {
+      "id": "booth17",
+      "name": "Available",
+      "x": "13m",
+      "y": "1m",
+      "width": "2m",
+      "height": "2m",
+      "status": "available",
+      "color": "#cccccc"
+    },
+    {
+      "id": "booth18",
+      "name": "Available",
+      "x": "16m",
+      "y": "1m",
+      "width": "1.5m",
+      "height": "2m",
+      "status": "available",
+      "color": "#cccccc"
+    },
+    {
+      "id": "booth19",
+      "name": "Available",
+      "x": "1m",
+      "y": "4.5m",
+      "width": "4m",
+      "height": "2m",
+      "status": "available",
+      "color": "#cccccc"
+    },
+    {
+      "id": "booth20",
+      "name": "Available",
+      "x": "6m",
+      "y": "4.5m",
+      "width": "4m",
+      "height": "2m",
+      "status": "available",
+      "color": "#cccccc"
+    }
+  ],
+  "stages": []
+}
