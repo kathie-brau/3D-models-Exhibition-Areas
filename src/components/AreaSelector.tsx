@@ -1,6 +1,6 @@
 import React from 'react';
 
-interface Area {
+export interface Area {
   id: string;
   name: string;
 }
