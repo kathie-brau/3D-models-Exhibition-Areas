@@ -1,0 +1,80 @@
+{
+  "areaName": "Main Exhibition Hall",
+  "rootDimensions": {
+    "width": "20m",
+    "height": "10m"
+  },
+  "booths": [
+    {
+      "id": "booth1",
+      "name": "MRC Global Norway AS",
+      "x": "2m",
+      "y": "2m",
+      "width": "2m",
+      "height": "1.5m",
+      "status": "sold",
+      "color": "#66aaff"
+    },
+    {
+      "id": "booth2", 
+      "name": "Energy Innovation AS",
+      "x": "5m",
+      "y": "2m",
+      "width": "2m",
+      "height": "1.5m",
+      "status": "sold",
+      "color": "#66aaff"
+    },
+    {
+      "id": "booth3",
+      "name": "Available",
+      "x": "8m",
+      "y": "2m", 
+      "width": "2m",
+      "height": "1.5m",
+      "status": "available",
+      "color": "#cccccc"
+    },
+    {
+      "id": "booth4",
+      "name": "Mintra Global",
+      "x": "2m",
+      "y": "5m",
+      "width": "2m",
+      "height": "1.5m",
+      "status": "sold",
+      "color": "#66aaff"
+    },
+    {
+      "id": "booth5",
+      "name": "Available",
+      "x": "5m", 
+      "y": "5m",
+      "width": "2m",
+      "height": "1.5m",
+      "status": "available",
+      "color": "#cccccc"
+    },
+    {
+      "id": "booth6",
+      "name": "We Energy AS",
+      "x": "8m",
+      "y": "5m",
+      "width": "2m", 
+      "height": "1.5m",
+      "status": "sold",
+      "color": "#66aaff"
+    }
+  ],
+  "stages": [
+    {
+      "id": "energy_stage",
+      "name": "Energy Stage",
+      "x": "2m",
+      "y": "7.5m",
+      "width": "6m",
+      "height": "2m",
+      "color": "#4455aa"
+    }
+  ]
+}

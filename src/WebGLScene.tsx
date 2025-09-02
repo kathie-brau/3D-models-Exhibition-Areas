@@ -1,24 +1,29 @@
 import React, { useRef, useEffect } from 'react';
 import * as THREE from 'three';
-import floorLayout from './floorLayout.json';
+import { AreaData, Booth, Stage, BoothStatus, StatusColors } from './types/booth';
 
-const WebGLScene = () => {
-  const mountRef = useRef(null);
-  const sceneRef = useRef(null);
-  const rendererRef = useRef(null);
-  const animationRef = useRef(null);
-  const polyplaneRef = useRef(null);
-  const boxesRef = useRef([]);
-  const mouseRef = useRef(new THREE.Vector2());
-  const raycasterRef = useRef(new THREE.Raycaster());
-  const hoveredBoxRef = useRef(null);
+interface WebGLSceneProps {
+  areaData: AreaData | null;
+}
+
+const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData }) => {
+  const mountRef = useRef<HTMLDivElement>(null);
+  const sceneRef = useRef<THREE.Scene | null>(null);
+  const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
+  const animationRef = useRef<number | null>(null);
+  const polyplaneRef = useRef<THREE.Mesh | null>(null);
+  const boxesRef = useRef<THREE.Mesh[]>([]);
+  const mouseRef = useRef<THREE.Vector2>(new THREE.Vector2());
+  const raycasterRef = useRef<THREE.Raycaster>(new THREE.Raycaster());
+  const hoveredBoxRef = useRef<THREE.Mesh | null>(null);
 
   // Helper function to parse meter values
-  const parseMeters = (value) => {
+  const parseMeters = (value: string): number => {
     return parseFloat(value.replace('m', ''));
   };
 
   useEffect(() => {
+    if (!areaData) return;
     const width = window.innerWidth;
     const height = window.innerHeight;
     const currentMount = mountRef.current;
@@ -40,7 +45,9 @@ const WebGLScene = () => {
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     rendererRef.current = renderer;
 
-    currentMount.appendChild(renderer.domElement);
+    if (currentMount) {
+      currentMount.appendChild(renderer.domElement);
+    }
 
     // Lighting
     const ambientLight = new THREE.AmbientLight(0x404040, 0.6);
@@ -52,8 +59,8 @@ const WebGLScene = () => {
     scene.add(directionalLight);
 
     // Get floor dimensions from JSON
-    const floorWidth = parseMeters(floorLayout.rootDimensions.width);
-    const floorHeight = parseMeters(floorLayout.rootDimensions.height);
+    const floorWidth = parseMeters(areaData.rootDimensions.width);
+    const floorHeight = parseMeters(areaData.rootDimensions.height);
 
     // Create polyplane as floor using JSON dimensions
     const polyplaneGeometry = new THREE.PlaneGeometry(floorWidth, floorHeight);
@@ -71,38 +78,122 @@ const WebGLScene = () => {
     scene.add(polyplane);
 
     // Create booths and stages from JSON layout
-    const boxes = [];
+    const boxes: THREE.Mesh[] = [];
     const hoverMaterial = new THREE.MeshLambertMaterial({ color: 0xff6666 });
     
+    // Status color mapping
+    const statusColors: StatusColors = {
+      'sold': 0x66aaff,      // Blue (matches UI)
+      'reserved': 0xffaa66,  // Orange (matches UI)
+      'available': 0xcccccc  // Gray (matches UI)
+    };
+    
+    // Helper function to create text texture
+    const createTextTexture = (text: string, status: BoothStatus): THREE.CanvasTexture => {
+      const canvas = document.createElement('canvas');
+      const context = canvas.getContext('2d')!;
+      
+      // Set canvas size
+      canvas.width = 512;
+      canvas.height = 256;
+      
+      // Clear canvas
+      context.fillStyle = 'rgba(0,0,0,0.8)';
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      
+      // Status indicator (top)
+      const statusTextColors = {
+        'sold': '#66aaff',
+        'reserved': '#ffaa66', 
+        'available': '#cccccc'
+      };
+      
+      context.fillStyle = statusTextColors[status] || '#cccccc';
+      context.fillRect(10, 10, canvas.width - 20, 40);
+      
+      // Status text
+      context.fillStyle = 'black';
+      context.font = 'bold 24px Arial';
+      context.textAlign = 'center';
+      context.fillText(status.toUpperCase(), canvas.width/2, 35);
+      
+      // Company name (bottom)
+      context.fillStyle = 'white';
+      context.font = '20px Arial';
+      context.textAlign = 'center';
+      
+      // Wrap text if too long
+      const maxWidth = canvas.width - 20;
+      const words = text.split(' ');
+      let line = '';
+      let y = 100;
+      
+      for (let n = 0; n < words.length; n++) {
+        const testLine = line + words[n] + ' ';
+        const metrics = context.measureText(testLine);
+        const testWidth = metrics.width;
+        
+        if (testWidth > maxWidth && n > 0) {
+          context.fillText(line, canvas.width/2, y);
+          line = words[n] + ' ';
+          y += 30;
+        } else {
+          line = testLine;
+        }
+      }
+      context.fillText(line, canvas.width/2, y);
+      
+      const texture = new THREE.CanvasTexture(canvas);
+      texture.needsUpdate = true;
+      return texture;
+    };
+    
     // Create booths
-    floorLayout.booths.forEach((booth, index) => {
+    areaData.booths.forEach((booth, index) => {
       const width = parseMeters(booth.width);
       const depth = parseMeters(booth.height);  
       const height = 0.3; // Fixed booth height (vertical dimension)
       const x = parseMeters(booth.x) - floorWidth/2 + width/2; // Center coordinates
       const y = parseMeters(booth.y) - floorHeight/2 + depth/2;
       
-      const boxGeometry = new THREE.BoxGeometry(width, depth, height); // width, depth, height
-      const boxMaterial = new THREE.MeshLambertMaterial({ color: booth.color });
+      const boxGeometry = new THREE.BoxGeometry(width, depth, height);
+      const boothColor = statusColors[booth.status] || 0xcccccc;
+      const boxMaterial = new THREE.MeshLambertMaterial({ color: boothColor });
       const box = new THREE.Mesh(boxGeometry, boxMaterial);
       
-      // Position on floor surface (relative to polyplane's local coordinates)
-      // Since polyplane is rotated -90° around X, its local Z points up
+      // Position on floor surface
       box.position.set(x, y, height/2);
       box.castShadow = true;
       box.userData = { 
         id: booth.id,
         name: booth.name,
+        status: booth.status,
         type: 'booth',
         originalMaterial: boxMaterial.clone(),
         hoverMaterial: hoverMaterial.clone()
       };
+      
+      // Create text label on top of booth
+      const textTexture = createTextTexture(booth.name, booth.status);
+      const labelGeometry = new THREE.PlaneGeometry(width * 0.9, depth * 0.9);
+      const labelMaterial = new THREE.MeshBasicMaterial({ 
+        map: textTexture, 
+        transparent: true,
+        alphaTest: 0.1
+      });
+      const label = new THREE.Mesh(labelGeometry, labelMaterial);
+      
+      // Position label on top of box
+      label.position.set(0, 0, height/2 + 0.01);
+      label.rotation.x = -Math.PI / 2; // Rotate to face up
+      box.add(label);
+      
       boxes.push(box);
       polyplane.add(box);
     });
 
     // Create stages
-    floorLayout.stages.forEach((stage, index) => {
+    areaData.stages.forEach((stage, index) => {
       const width = parseMeters(stage.width);
       const depth = parseMeters(stage.height);
       const height = 0.2; // Stages are lower (vertical dimension)
@@ -129,7 +220,7 @@ const WebGLScene = () => {
     boxesRef.current = boxes;
 
     // Mouse interaction
-    const handleMouseMove = (event) => {
+    const handleMouseMove = (event: MouseEvent): void => {
       mouseRef.current.x = (event.clientX / window.innerWidth) * 2 - 1;
       mouseRef.current.y = -(event.clientY / window.innerHeight) * 2 + 1;
 
@@ -139,7 +230,7 @@ const WebGLScene = () => {
 
       // Reset previous hover
       if (hoveredBoxRef.current) {
-        hoveredBoxRef.current.material = hoveredBoxRef.current.userData.originalMaterial;
+        (hoveredBoxRef.current as THREE.Mesh).material = hoveredBoxRef.current.userData.originalMaterial;
         hoveredBoxRef.current = null;
       }
 
@@ -149,7 +240,7 @@ const WebGLScene = () => {
       );
       
       if (boxIntersects.length > 0) {
-        const intersectedBox = boxIntersects[0].object;
+        const intersectedBox = boxIntersects[0].object as THREE.Mesh;
         intersectedBox.material = intersectedBox.userData.hoverMaterial;
         hoveredBoxRef.current = intersectedBox;
       }
@@ -174,7 +265,7 @@ const WebGLScene = () => {
     animate();
 
     // Handle window resize
-    const handleResize = () => {
+    const handleResize = (): void => {
       const newWidth = window.innerWidth;
       const newHeight = window.innerHeight;
       
@@ -201,7 +292,11 @@ const WebGLScene = () => {
       
       renderer.dispose();
     };
-  }, []);
+  }, [areaData]);
+
+  if (!areaData) {
+    return <div>Loading scene...</div>;
+  }
 
   return <div ref={mountRef} style={{ width: '100%', height: '100vh' }} />;
 };

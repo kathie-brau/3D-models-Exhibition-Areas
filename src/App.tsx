@@ -1,0 +1,53 @@
+import React, { useState } from 'react';
+import WebGLScene from './WebGLScene';
+import AreaSelector from './components/AreaSelector';
+import BoothStatus from './components/BoothStatus';
+import { useAreaData } from './hooks/useAreaData';
+import './App.css';
+
+const App: React.FC = () => {
+  const [currentArea, setCurrentArea] = useState<string>('area1');
+  const { data: areaData, loading, error } = useAreaData(currentArea);
+
+  if (loading) {
+    return (
+      <div className="App" style={{ 
+        display: 'flex', 
+        justifyContent: 'center', 
+        alignItems: 'center', 
+        height: '100vh',
+        fontSize: '18px'
+      }}>
+        Loading {currentArea}...
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="App" style={{ 
+        display: 'flex', 
+        justifyContent: 'center', 
+        alignItems: 'center', 
+        height: '100vh',
+        fontSize: '18px',
+        color: 'red'
+      }}>
+        Error: {error}
+      </div>
+    );
+  }
+
+  return (
+    <div className="App" style={{ position: 'relative', height: '100vh' }}>
+      <AreaSelector 
+        currentArea={currentArea} 
+        onAreaChange={setCurrentArea} 
+      />
+      <BoothStatus areaData={areaData} />
+      <WebGLScene areaData={areaData} />
+    </div>
+  );
+}
+
+export default App;
