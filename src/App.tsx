@@ -6,7 +6,8 @@ import { useAreaData } from './hooks/useAreaData';
 import './App.css';
 
 const App: React.FC = () => {
-  const [currentArea, setCurrentArea] = useState<string>('area1');
+  const [currentArea, setCurrentArea] = useState<string>('Hall_C');
+  const [showExhibitorDetails, setShowExhibitorDetails] = useState<boolean>(false);
   const { data: areaData, loading, error } = useAreaData(currentArea);
 
   if (loading) {
@@ -42,10 +43,15 @@ const App: React.FC = () => {
     <div className="App" style={{ position: 'relative', height: '100vh' }}>
       <AreaSelector 
         currentArea={currentArea} 
-        onAreaChange={setCurrentArea} 
+        onAreaChange={setCurrentArea}
+        showExhibitorDetails={showExhibitorDetails}
+        onToggleExhibitorDetails={setShowExhibitorDetails}
       />
       <BoothStatus areaData={areaData} />
-      <WebGLScene areaData={areaData} />
+      <WebGLScene 
+        areaData={areaData} 
+        showExhibitorDetails={showExhibitorDetails}
+      />
     </div>
   );
 }

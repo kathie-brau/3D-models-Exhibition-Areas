@@ -1,123 +1,120 @@
 import { useState, useEffect, useRef } from 'react';
-import { AreaData, BoothStatus } from '../types/booth';
-import { fetchBoothStatusFromSheets } from '../services/googleSheets';
+import { AreaData } from '../types/booth';
+import { fetchBoothInfoFromSheets } from '../services/googleSheets';
 
 export function useAreaData(areaId: string, hotReload: boolean = true) {
   const [data, setData] = useState<AreaData | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
-  const [switching, setSwitching] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
-  const lastModifiedRef = useRef<string | null>(null);
-  const baseAreaDataRef = useRef<AreaData | null>(null);
+  const lastDataHashRef = useRef<string | null>(null);
 
-  const loadBaseAreaData = async (isAreaSwitch = false) => {
+  const loadAreaDataFromSheets = async () => {
     try {
       setError(null);
-      if (isAreaSwitch) setSwitching(true);
+      setLoading(true);
       
-      // Load base area data from JSON (only when needed)
-      const response = await fetch(`/data/${areaId}.json`);
-      if (!response.ok) {
-        throw new Error(`Failed to load ${areaId} data`);
+      console.log(`📈 Loading booth data from Google Sheets for area: ${areaId}`);
+      
+      // Fetch all booth data from Google Sheets
+      const boothMap = await fetchBoothInfoFromSheets();
+      
+      // Filter booths by area based on booth ID prefix
+      // B-xxxx → Hall_B_2, C-xxxx → Hall_C, E-xxxx → Hall_E_3
+      // MainExhibitionHall → Show all booths (different event)
+      let boothPrefix = '';
+      switch (areaId) {
+        case 'Hall_B_2':
+          boothPrefix = 'B-';
+          break;
+        case 'Hall_C':
+          boothPrefix = 'C-';
+          break;
+        case 'Hall_E_3':
+          boothPrefix = 'E-';
+          break;
+        case 'MainExhibitionHall':
+          boothPrefix = ''; // Show all booths for MainExhibitionHall
+          break;
       }
       
-      const lastModified = response.headers.get('last-modified');
-      const areaData: AreaData = await response.json();
+      const allBooths = Array.from(boothMap.values());
+      const filteredBooths = boothPrefix ? 
+        allBooths.filter(booth => booth.id.startsWith(boothPrefix)) : 
+        allBooths;
       
-      // Always update for area switches, or when JSON file changed
-      if (isAreaSwitch || !lastModifiedRef.current || lastModified !== lastModifiedRef.current) {
-        baseAreaDataRef.current = areaData;
-        lastModifiedRef.current = lastModified;
-        console.log(`📁 Base area data loaded for ${areaId}`);
-        
-        // Immediately fetch and merge with Google Sheets data
-        await mergeWithSheetData();
+      // Determine area name based on areaId
+      let areaName = 'Exhibition Area';
+      switch (areaId) {
+        case 'Hall_C':
+          areaName = 'Exhibition Hall C';
+          break;
+        case 'Hall_B_2':
+          areaName = 'Exhibition Hall B';
+          break;
+        case 'Hall_E_3':
+          areaName = 'Exhibition Hall E';
+          break;
+        case 'MainExhibitionHall':
+          areaName = 'Main Exhibition Hall';
+          break;
       }
+      
+      console.log(`🏢 Found ${filteredBooths.length} booths for area ${areaName} (prefix: ${boothPrefix || 'none'})`);
+      
+      // Create area data structure
+      const areaData: AreaData = {
+        areaId,
+        areaName,
+        booths: filteredBooths
+      };
+      
+      // Create a hash of the data to detect actual changes
+      const dataHash = JSON.stringify({
+        areaId: areaData.areaId,
+        areaName: areaData.areaName,
+        booths: areaData.booths.map(booth => ({
+          id: booth.id,
+          name: booth.name,
+          status: booth.status,
+          color: booth.color,
+          width: booth.width,
+          height: booth.height,
+          area: booth.area
+        }))
+      });
+      
+      // Only update state if data has actually changed
+      if (dataHash !== lastDataHashRef.current) {
+        console.log(`🔄 Area data changed, updating state`);
+        lastDataHashRef.current = dataHash;
+        setData(areaData);
+      } else {
+        console.log(`⏭️ Area data unchanged, skipping state update`);
+      }
+      
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Unknown error occurred';
       setError(errorMessage);
-      console.error(`Error loading base area data for ${areaId}:`, err);
+      console.error(`Error loading area data for ${areaId}:`, err);
     } finally {
       setLoading(false);
-      setSwitching(false);
     }
   };
 
-  const mergeWithSheetData = async () => {
-    if (!baseAreaDataRef.current) {
-      console.log('⚠️ No base area data to merge with');
-      return;
-    }
-    
-    try {
-      console.log(`🔗 Fetching and merging Google Sheets data for ${areaId}:`);
-      
-      // Fetch fresh data from Google Sheets
-      const boothStatuses = await fetchBoothStatusFromSheets();
-      
-      console.log(`📋 Fetched ${boothStatuses.size} entries from Google Sheets`);
-      console.log(`🏢 Base data has ${baseAreaDataRef.current.booths.length} booths`);
-      
-      // Merge booth statuses from Google Sheets with base area data
-      const updatedAreaData: AreaData = {
-        ...baseAreaDataRef.current,
-        booths: baseAreaDataRef.current.booths.map((booth, index) => {
-          // Google Sheets data has PRIORITY over local JSON
-          const sheetStatus = boothStatuses.get(booth.id);
-          const finalStatus = sheetStatus !== undefined ? sheetStatus : booth.status;
-          
-          console.log(`🔄 [${index}] ${booth.id}: "${booth.status}" (local) + "${sheetStatus}" (sheet) → "${finalStatus}"`);
-          
-          return {
-            ...booth,
-            status: finalStatus,
-            // Update color based on status
-            color: getColorForStatus(finalStatus)
-          };
-        })
-      };
-      
-      console.log('✅ Data merged, updating state');
-      setData(updatedAreaData);
-    } catch (error) {
-      console.error('❌ Error fetching/merging sheet data:', error);
-      // Fallback to base data if sheets fail
-      setData(baseAreaDataRef.current);
-    }
-  };
 
-  // Helper function to get color based on status
-  const getColorForStatus = (status: BoothStatus): string => {
-    switch (status) {
-      case 'sold':
-        return '#66aaff';     // Blue
-      case 'reserved':
-        return '#ffaa66';     // Orange
-      case 'available':
-        return '#cccccc';     // Gray
-      case 'nil':
-        return '#ff69b4';     // Pink - indicates missing data
-      default:
-        return '#cccccc';
-    }
-  };
-
-  // Load base area data on mount and when area changes
+  // Load area data on mount and when area changes
   useEffect(() => {
     if (!areaId) return;
 
-    setLoading(true);
-    // Pass true for area switch to indicate this is an area change
-    loadBaseAreaData(true);
+    // Load initial data
+    loadAreaDataFromSheets();
 
-    // Set up polling for both JSON and Google Sheets (every 10 seconds)
+    // Set up polling for Google Sheets data (every 10 seconds in development)
     if (hotReload && process.env.NODE_ENV === 'development') {
       intervalRef.current = setInterval(async () => {
-        // Reload JSON data
-        await loadBaseAreaData(false);
-        // Fresh sheet data is fetched as part of loadBaseAreaData now
-      }, 10000);
+        await loadAreaDataFromSheets();
+      }, 100000);
     }
 
     return () => {
@@ -128,5 +125,5 @@ export function useAreaData(areaId: string, hotReload: boolean = true) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [areaId, hotReload]);
 
-  return { data, loading: loading || switching, error };
+  return { data, loading, error };
 }

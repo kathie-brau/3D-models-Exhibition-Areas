@@ -1,42 +1,30 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useMemo } from 'react';
 import * as THREE from 'three';
 import { AreaData, BoothStatus, StatusColors } from './types/booth';
 import { GLTF, GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader";
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
-import {Area } from './components/AreaSelector'
-
+import { CSS3DRenderer, CSS3DObject } from 'three/examples/jsm/renderers/CSS3DRenderer';
 
 interface WebGLSceneProps {
   areaData: AreaData | null;
+  showExhibitorDetails: boolean;
 }
 
-const areas: Area[] = [
-  { id: 'Hall_B_2', name: 'Main Exhibition Hall' },
-  { id: 'Hall_C', name: 'Technology Pavilion' },
-  { id: 'Hall_E_3', name: 'Innovation Zone' }
-];
-
-
-const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData }) => {
+const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, showExhibitorDetails }) => {
   const mountRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
+  const css3dRendererRef = useRef<CSS3DRenderer | null>(null);
+  const css3dSceneRef = useRef<THREE.Scene | null>(null);
   const animationRef = useRef<number | null>(null);
-  const polyplaneRef = useRef<THREE.Mesh | null>(null);
-  const boxesRef = useRef<THREE.Mesh[]>([]);
-  const mouseRef = useRef<THREE.Vector2>(new THREE.Vector2());
-  const raycasterRef = useRef<THREE.Raycaster>(new THREE.Raycaster());
-  const hoveredBoxRef = useRef<THREE.Mesh | null>(null);
+  const calloutsRef = useRef<CSS3DObject[]>([]);
+  const nameCalloutsRef = useRef<CSS3DObject[]>([]); // For name callouts
+  const boothMeshMapRef = useRef<Map<THREE.Mesh, any>>(new Map()); // Map mesh to booth data
+  const cameraRef = useRef<THREE.Camera | null>(null); // Reference to camera for billboard effect
 
-  // Helper function to parse meter values
-  const parseMeters = (value: string): number => {
-    return parseFloat(value.replace('m', ''));
-  };
 
   useEffect(() => {
     if (!areaData) return;
-
-    console.log("!!!!!!!!!!!!!!!!!!!!Area name is ",areaData.areaName);
 
     const currentMount = mountRef.current;
     if (!currentMount) return;
@@ -44,56 +32,188 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData }) => {
     const width = window.innerWidth;
     const height = window.innerHeight;
 
-    // Scene setup
+    // WebGL Scene setup
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x222222);
     sceneRef.current = scene;
+    
+    // CSS3D Scene setup for callouts
+    const css3dScene = new THREE.Scene();
+    css3dSceneRef.current = css3dScene;
 
     // Camera setup - position to see the full 20x10m floor
-    const camera = new THREE.PerspectiveCamera(75, width / height, 0.1, 1000);
+    const camera = new THREE.PerspectiveCamera(75, width / height, 0.1, 2000);
     camera.position.set(0, 15, 8); // Higher up and angled down to see full floor
     camera.lookAt(0, -1, 0); // Look at the floor
+    cameraRef.current = camera; // Store camera reference for billboard effect
 
-    // Renderer setup
+    // WebGL Renderer setup
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(width, height);
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     rendererRef.current = renderer;
 
+    // CSS3D Renderer setup for callouts
+    const css3dRenderer = new CSS3DRenderer();
+    css3dRenderer.setSize(width, height);
+    css3dRenderer.domElement.style.position = 'absolute';
+    css3dRenderer.domElement.style.top = '0';
+    css3dRenderer.domElement.style.left = '0';
+    css3dRenderer.domElement.style.pointerEvents = 'none';
+    css3dRenderer.domElement.style.zIndex = '100';
+    css3dRendererRef.current = css3dRenderer;
+
     if (currentMount) {
       currentMount.appendChild(renderer.domElement);
+      currentMount.appendChild(css3dRenderer.domElement);
     }
 
     const controls = new OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = true;      // плавність
-    controls.enableZoom = true;         // вкл. зум
-    controls.zoomSpeed = 1.0;           // швидкість зуму
-    controls.minDistance = 2;           // мін. відстань до моделі
-    controls.maxDistance = 50;          // макс. відстань
-    controls.enablePan = true;          // за потреби — панорамування
+    controls.enableDamping = true;      // smoothness
+    controls.enableZoom = true;         // incl. zoom
+    controls.zoomSpeed = 1.0;           // zoom speed
+    controls.minDistance = 2;           // min. distance
+    controls.maxDistance = 50;          // max. distance
+    controls.enablePan = true;          // panoramic view, if necessary
+
+    // Function to map booth meshes to their data (for click handling)
+    const mapBoothMeshes = () => {
+      if (!areaData || !scene) return;
+
+      console.log(`🏢 Mapping booth meshes for ${areaData.areaName}`);
+      console.log(`  Booths: ${areaData.booths.length}`);
+      
+      // Clear existing mesh map
+      boothMeshMapRef.current.clear();
+      
+      // Log booth data for debugging
+      console.log('  Booth IDs:', areaData.booths.map(b => b.id).slice(0, 10));
+      
+      // Map each booth to its corresponding mesh
+      areaData.booths.forEach((booth) => {
+        // Try multiple mesh name patterns
+        const possibleMeshNames = [
+          `BOOTHLAYER_curve_.${booth.id}`,
+          `BOOTHLAYER_curve_${booth.id}`,
+          `${booth.id}`,
+          `Booth_${booth.id}`,
+          `booth_${booth.id}`,
+          `${booth.id.replace('-', '_')}`,
+          `${booth.id.toLowerCase()}`,
+          `${booth.id.toUpperCase()}`
+        ];
+        
+        console.log(`  Looking for mesh for booth ${booth.id}, trying patterns:`, possibleMeshNames.slice(0, 3));
+        
+        let foundMesh: THREE.Mesh | null = null;
+        
+        // Search through all meshes in the scene with different naming patterns
+        for (const meshName of possibleMeshNames) {
+          scene.traverse((object) => {
+            if (object instanceof THREE.Mesh && object.name === meshName) {
+              foundMesh = object;
+              console.log(`    Found mesh: ${meshName}`);
+            }
+          });
+          if (foundMesh) break;
+        }
+        
+        // Also try partial matches
+        if (!foundMesh) {
+          scene.traverse((object) => {
+            if (object instanceof THREE.Mesh && object.name) {
+              if (object.name.includes(booth.id) || 
+                  object.name.includes(booth.id.replace('-', '_')) ||
+                  object.name.includes(booth.id.replace('-', ''))) {
+                foundMesh = object;
+                console.log(`    Found mesh by partial match: ${object.name}`);
+              }
+            }
+          });
+        }
+        
+        if (foundMesh !== null) {
+          // Map this mesh to its booth data
+          boothMeshMapRef.current.set(foundMesh as THREE.Mesh, booth);
+          console.log(`    Mapped mesh ${(foundMesh as THREE.Mesh).name} to booth ${booth.id}`);
+        } else {
+          console.log(`    No mesh found for ${booth.id}`);
+        }
+      });
+      
+      console.log(`  Mapped ${boothMeshMapRef.current.size} booth meshes`);
+      
+      // List all mesh names for debugging
+      console.log('  All mesh names in scene:');
+      const allMeshNames: string[] = [];
+      scene.traverse((object) => {
+        if (object instanceof THREE.Mesh && object.name) {
+          allMeshNames.push(object.name);
+        }
+      });
+      console.log('   ', allMeshNames.slice(0, 20)); // Show first 20 to avoid console spam
+    };
+
+    // Function to show info callout for a specific booth (on click)
+    const showBoothInfoCallout = (booth: any, mesh: THREE.Mesh) => {
+      if (!css3dScene) return;
+      
+      // Clear only info callouts (keep name callouts visible)
+      clearCallouts();
+      
+      // Update mesh world matrix to ensure accurate positioning
+      mesh.updateMatrixWorld(true);
+      
+      // Calculate mesh center position in world coordinates
+      const box = new THREE.Box3().setFromObject(mesh);
+      const center = box.getCenter(new THREE.Vector3());
+      
+      // Create info callout (ID, dimensions, area) - positioned higher above the mesh
+      const infoCalloutPosition = center.clone();
+      infoCalloutPosition.y += 1.2; // Higher position for info callouts
+      const infoCallout = createBoothCallout(booth, infoCalloutPosition);
+      css3dScene.add(infoCallout);
+      calloutsRef.current.push(infoCallout);
+      
+      console.log(`Showing info callout for booth ${booth.id}`);
+    };
+
 
 
     // Lighting
-    const ambientLight = new THREE.AmbientLight(0x404040, 0.6);
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.25);
     scene.add(ambientLight);
 
-    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
-    directionalLight.position.set(10, 10, 5);
-    directionalLight.castShadow = true;
-    scene.add(directionalLight);
+    // Sky light (sky/ground) for more natural shadows and highlights
+    const hemiLight = new THREE.HemisphereLight(0xffffff, 0x222233, 0.65);
+    hemiLight.position.set(0, 1, 0);
+    scene.add(hemiLight);
 
-    // Завантаження моделі (TypeScript-friendly)
+    const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
+    dirLight.position.set(12, 18, 10);
+    dirLight.target.position.set(0, 0, 0);
+    dirLight.castShadow = true;
+    dirLight.shadow.mapSize.width = 2048;
+    dirLight.shadow.mapSize.height = 2048;
+    dirLight.shadow.camera.near = 0.5;
+    dirLight.shadow.camera.far = 200;
+    dirLight.shadow.bias = -0.0005;
+    dirLight.shadow.normalBias = 0.02;
+    scene.add(dirLight);
+    scene.add(dirLight.target);
+
+    // Loading the model (TypeScript-friendly)
     const loader = new GLTFLoader();
 
-    // Група/сцена з GLTF (Object3D теж ок)
+    // Group/scene GLTF 
     let rootModel: THREE.Group | null = null;
 
-    // Зручний type guard
+    //  type guard
     const isMesh = (o: THREE.Object3D): o is THREE.Mesh =>
       (o as THREE.Mesh).isMesh === true;
 
-    // Отримати всі меші (частини моделі)
+    // Get all meshes (parts of the model)
     const collectMeshes = (root: THREE.Object3D): THREE.Mesh[] => {
       const list: THREE.Mesh[] = [];
       root.traverse((o: THREE.Object3D) => {
@@ -108,7 +228,7 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData }) => {
         loader.load(
           url,
           (gltf: GLTF) => {
-            // gltf.scene — це THREE.Group
+            // gltf.scene — THREE.Group
             resolve(gltf.scene);
           },
           undefined,
@@ -140,7 +260,7 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData }) => {
           root.traverse((o) => {
             if (isMesh(o)) {
               o.userData._interactive = matchesAllowed(o.name);
-              // збережемо оригінальний колір
+              // preserve the original color
               const mat = Array.isArray(o.material) ? o.material[0] : o.material;
               if ((mat as THREE.MeshStandardMaterial)?.color) {
                 o.userData._origColor = (mat as THREE.MeshStandardMaterial).color.getHex();
@@ -150,16 +270,16 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData }) => {
         };
         markInteractives(rootModel);
 
-        // Типізуємо параметр traverse (Object3D)
+        // Let's type the traverse parameter (Object3D)
         rootModel.traverse((o: THREE.Object3D) => {
-          // оскільки потрібні поля Mesh — робимо type guard
+          // since the required fields are Mesh — we create a type guard
           if ((o as THREE.Mesh).isMesh) {
             const mesh = o as THREE.Mesh;
 
             mesh.castShadow = true;
             mesh.receiveShadow = true;
 
-            // захист від відсутності color + збереження початкового кольору
+            // protection against color loss + preservation of original color
             const mat = mesh.material as THREE.Material | THREE.Material[];
             const single = Array.isArray(mat) ? mat[0] : mat;
 
@@ -169,186 +289,41 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData }) => {
           }
         });
 
-        // Центрування/масштаб
+        // Centering/scale
         const box = new THREE.Box3().setFromObject(rootModel);
         const size = box.getSize(new THREE.Vector3());
-        console.log("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!Model size:", size);
+        
         const center = box.getCenter(new THREE.Vector3());
-        // rootModel.position.sub(center);
         const maxDim = Math.max(size.x, size.y, size.z);
-        const scale = 10 / (maxDim || 1);
+        const scale = (10 / (maxDim || 1))* 2;
         rootModel.scale.setScalar(scale);
-
+        rootModel.position.y = 0.01;
         scene.add(rootModel);
+
+        // Update all matrix transforms after scaling and positioning
+        rootModel.updateMatrixWorld(true);
+        
+        // Map booth meshes after model is loaded, scaled, and positioned
+        // Wait a bit for the scene to fully render before mapping meshes
+        setTimeout(() => {
+          mapBoothMeshes();
+          // Apply booth status colors after mapping is complete
+          setTimeout(() => {
+            applyBoothStatusColors();
+            // Create name callouts after coloring (if enabled)
+            if (showExhibitorDetails) {
+              setTimeout(() => {
+                createAllNameCallouts();
+              }, 100);
+            }
+          }, 100);
+        }, 200); // Increased timeout to ensure transforms are applied
       } catch (e: unknown) {
         const msg = e instanceof Error ? e.message : String(e);
-        alert('Не вдалося завантажити модель: ' + msg);
+        alert('Failed to load model: ' + msg);
       }
     }
 
-
-    // // Get floor dimensions from JSON
-    // const floorWidth = parseMeters(areaData.rootDimensions.width);
-    // const floorHeight = parseMeters(areaData.rootDimensions.height);
-
-    // // Create polyplane as floor using JSON dimensions
-    // const polyplaneGeometry = new THREE.PlaneGeometry(floorWidth, floorHeight);
-    // const polyplaneMaterial = new THREE.MeshLambertMaterial({ 
-    //   color: 0x333333,
-    //   transparent: true,
-    //   opacity: 0.9
-    // });
-    // const polyplane = new THREE.Mesh(polyplaneGeometry, polyplaneMaterial);
-    // polyplane.receiveShadow = true;
-    // // Rotate to be horizontal (floor)
-    // polyplane.rotation.x = -Math.PI / 2;
-    // polyplane.position.y = -1;
-    // polyplaneRef.current = polyplane;
-    // scene.add(polyplane);
-
-    // // Create booths and stages from JSON layout
-    // const boxes: THREE.Mesh[] = [];
-    // const hoverMaterial = new THREE.MeshLambertMaterial({ color: 0xff6666 });
-
-    // // Status color mapping
-    // const statusColors: StatusColors = {
-    //   'sold': 0x66aaff,      // Blue (matches UI)
-    //   'reserved': 0xffaa66,  // Orange (matches UI)
-    //   'available': 0xcccccc, // Gray (matches UI)
-    //   'nil': 0xff69b4        // Pink - missing data indicator
-    // };
-
-    // // Helper function to create text texture
-    // const createTextTexture = (text: string, status: BoothStatus): THREE.CanvasTexture => {
-    //   const canvas = document.createElement('canvas');
-    //   const context = canvas.getContext('2d')!;
-
-    //   // Set canvas size
-    //   canvas.width = 512;
-    //   canvas.height = 256;
-
-    //   // Clear canvas
-    //   context.fillStyle = 'rgba(0,0,0,0.8)';
-    //   context.fillRect(0, 0, canvas.width, canvas.height);
-
-    //   // Status indicator (top)
-    //   const statusTextColors = {
-    //     'sold': '#66aaff',
-    //     'reserved': '#ffaa66', 
-    //     'available': '#cccccc',
-    //     'nil': '#ff69b4'
-    //   };
-
-    //   context.fillStyle = statusTextColors[status] || '#cccccc';
-    //   context.fillRect(10, 10, canvas.width - 20, 40);
-
-    //   // Status text
-    //   context.fillStyle = 'black';
-    //   context.font = 'bold 24px Arial';
-    //   context.textAlign = 'center';
-    //   context.fillText(status.toUpperCase(), canvas.width/2, 35);
-
-    //   // Company name (bottom)
-    //   context.fillStyle = 'white';
-    //   context.font = '20px Arial';
-    //   context.textAlign = 'center';
-
-    //   // Wrap text if too long
-    //   const maxWidth = canvas.width - 20;
-    //   const words = text.split(' ');
-    //   let line = '';
-    //   let y = 100;
-
-    //   for (let n = 0; n < words.length; n++) {
-    //     const testLine = line + words[n] + ' ';
-    //     const metrics = context.measureText(testLine);
-    //     const testWidth = metrics.width;
-
-    //     if (testWidth > maxWidth && n > 0) {
-    //       context.fillText(line, canvas.width/2, y);
-    //       line = words[n] + ' ';
-    //       y += 30;
-    //     } else {
-    //       line = testLine;
-    //     }
-    //   }
-    //   context.fillText(line, canvas.width/2, y);
-
-    //   const texture = new THREE.CanvasTexture(canvas);
-    //   texture.needsUpdate = true;
-    //   return texture;
-    // };
-
-    // // Create booths
-    // areaData.booths.forEach((booth, index) => {
-    //   const width = parseMeters(booth.width);
-    //   const depth = parseMeters(booth.height);  
-    //   const height = 0.3; // Fixed booth height (vertical dimension)
-    //   const x = parseMeters(booth.x) - floorWidth/2 + width/2; // Center coordinates
-    //   const y = parseMeters(booth.y) - floorHeight/2 + depth/2;
-
-    //   const boxGeometry = new THREE.BoxGeometry(width, depth, height);
-    //   const boothColor = statusColors[booth.status] || 0xcccccc;
-    //   const boxMaterial = new THREE.MeshLambertMaterial({ color: boothColor });
-    //   const box = new THREE.Mesh(boxGeometry, boxMaterial);
-
-    //   // Position on floor surface
-    //   box.position.set(x, y, height/2);
-    //   box.castShadow = true;
-    //   box.userData = { 
-    //     id: booth.id,
-    //     name: booth.name,
-    //     status: booth.status,
-    //     type: 'booth',
-    //     originalMaterial: boxMaterial.clone(),
-    //     hoverMaterial: hoverMaterial.clone()
-    //   };
-
-    //   // Create text label on top of booth
-    //   const textTexture = createTextTexture(booth.name, booth.status);
-    //   const labelGeometry = new THREE.PlaneGeometry(width * 0.9, depth * 0.9);
-    //   const labelMaterial = new THREE.MeshBasicMaterial({ 
-    //     map: textTexture, 
-    //     transparent: true,
-    //     alphaTest: 0.1
-    //   });
-    //   const label = new THREE.Mesh(labelGeometry, labelMaterial);
-
-    //   // Position label on top of box
-    //   label.position.set(0, 0, height/2 + 0.01);
-    //   label.rotation.x = -Math.PI / 2; // Rotate to face up
-    //   box.add(label);
-
-    //   boxes.push(box);
-    //   polyplane.add(box);
-    // });
-
-    // // Create stages
-    // areaData.stages.forEach((stage, index) => {
-    //   const width = parseMeters(stage.width);
-    //   const depth = parseMeters(stage.height);
-    //   const height = 0.2; // Stages are lower (vertical dimension)
-    //   const x = parseMeters(stage.x) - floorWidth/2 + width/2;
-    //   const y = parseMeters(stage.y) - floorHeight/2 + depth/2;
-
-    //   const stageGeometry = new THREE.BoxGeometry(width, depth, height); // width, depth, height
-    //   const stageMaterial = new THREE.MeshLambertMaterial({ color: stage.color });
-    //   const stageBox = new THREE.Mesh(stageGeometry, stageMaterial);
-
-    //   stageBox.position.set(x, y, height/2);
-    //   stageBox.castShadow = true;
-    //   stageBox.userData = { 
-    //     id: stage.id,
-    //     name: stage.name,
-    //     type: 'stage',
-    //     originalMaterial: stageMaterial.clone(),
-    //     hoverMaterial: hoverMaterial.clone()
-    //   };
-    //   boxes.push(stageBox);
-    //   polyplane.add(stageBox);
-    // });
-
-    // boxesRef.current = boxes;
 
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
@@ -361,7 +336,7 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData }) => {
       return list;
     };
 
-    // У подіях:
+    // In events:
     function setMouseFromEvent(e: MouseEvent, renderer: THREE.WebGLRenderer) {
       const rect = renderer.domElement.getBoundingClientRect();
       mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
@@ -383,16 +358,16 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData }) => {
       if (hits.length) {
         const m = hits[0].object as THREE.Mesh;
         if (hovered !== m) {
-          // повернути колір попереднього
+          // restore the previous color
           if (hovered && hovered.material && hovered.userData._hoverColor !== undefined) {
             const mat = Array.isArray(hovered.material) ? hovered.material[0] : hovered.material;
             (mat as THREE.MeshStandardMaterial).color.setHex(hovered.userData._hoverColor);
           }
-          // зберегти і підсвітити жовтим
+          // save and highlight in yellow
           const mat = Array.isArray(m.material) ? m.material[0] : m.material;
           if ((mat as THREE.MeshStandardMaterial)?.color) {
             m.userData._hoverColor = (mat as THREE.MeshStandardMaterial).color.getHex();
-            // клон, щоб не зачепити спільні матеріали
+            // Clone to avoid affecting shared materials
             if (!Array.isArray(m.material)) m.material = mat.clone();
             ((Array.isArray(m.material) ? m.material[0] : m.material) as THREE.MeshStandardMaterial)
               .color.set("#ffff00");
@@ -400,7 +375,7 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData }) => {
           hovered = m;
         }
       } else {
-        // прибрати підсвітку
+        // Turn off the backlight
         if (hovered && hovered.material && hovered.userData._hoverColor !== undefined) {
           const mat = Array.isArray(hovered.material) ? hovered.material[0] : hovered.material;
           (mat as THREE.MeshStandardMaterial).color.setHex(hovered.userData._hoverColor);
@@ -412,81 +387,60 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData }) => {
     const onClick = (e: MouseEvent, renderer: THREE.WebGLRenderer, camera: THREE.Camera) => {
       setMouseFromEvent(e, renderer);
       const hits = pickInteractive(camera);
-      if (!hits.length) return;
-
-      const m = hits[0].object as THREE.Mesh;
-      const mat = Array.isArray(m.material) ? m.material[0] : m.material;
-      if (!(mat as THREE.MeshStandardMaterial)?.color) return;
-
-      // клон матеріалу
-      if (!Array.isArray(m.material)) m.material = mat.clone();
-
-      const ms = (Array.isArray(m.material) ? m.material[0] : m.material) as THREE.MeshStandardMaterial;
-
-      if (!m.userData._isRed) {
-        if (m.userData._origColor === undefined) {
-          m.userData._origColor = ms.color.getHex();
-        }
-        ms.color.set("#ff0000");
-        m.userData._isRed = true;
-      } else {
-        if (m.userData._origColor !== undefined) {
-          ms.color.setHex(m.userData._origColor);
-        }
-        m.userData._isRed = false;
+      if (!hits.length) {
+        // Clicked on empty space - hide only info callouts (keep name callouts)
+        clearCallouts();
+        return;
       }
-      ms.needsUpdate = true;
+
+      const clickedMesh = hits[0].object as THREE.Mesh;
+      
+      // Check if this mesh has booth data
+      const boothData = boothMeshMapRef.current.get(clickedMesh);
+      if (boothData) {
+        // Show info callout for this booth (name callouts stay visible)
+        showBoothInfoCallout(boothData, clickedMesh);
+      }
     };
 
     renderer.domElement.addEventListener("mousemove", e => onPointerMove(e, renderer, camera));
     renderer.domElement.addEventListener("click", e => onClick(e, renderer, camera));
-    // у cleanup – removeEventListener
     
-    // // Mouse interaction
-    // const handleMouseMove = (event: MouseEvent): void => {
-    //   mouseRef.current.x = (event.clientX / window.innerWidth) * 2 - 1;
-    //   mouseRef.current.y = -(event.clientY / window.innerHeight) * 2 + 1;
+    // Use areaId directly from areaData
+    initModel('/3D-models-Exhibition-Areas/models/'+areaData.areaId+'.glb');
 
-    //   raycasterRef.current.setFromCamera(mouseRef.current, camera);
-    //   // Need to check intersections with boxes in world space, not just the array
-    //   const intersects = raycasterRef.current.intersectObjects(scene.children, true);
 
-    //   // Reset previous hover
-    //   if (hoveredBoxRef.current) {
-    //     (hoveredBoxRef.current as THREE.Mesh).material = hoveredBoxRef.current.userData.originalMaterial;
-    //     hoveredBoxRef.current = null;
-    //   }
-
-    //   // Set new hover - filter for booths and stages only
-    //   const boxIntersects = intersects.filter(intersect =>
-    //     intersect.object.userData && (intersect.object.userData.type === 'booth' || intersect.object.userData.type === 'stage')
-    //   );
-
-    //   if (boxIntersects.length > 0) {
-    //     const intersectedBox = boxIntersects[0].object as THREE.Mesh;
-    //     intersectedBox.material = intersectedBox.userData.hoverMaterial;
-    //     hoveredBoxRef.current = intersectedBox;
-    //   }
-    // };
-
-    let areaId = areas.find(a => a.name === areaData.areaName)?.id;
-
-    initModel('/models/'+areaId+'.glb');
-
-    // window.addEventListener('mousemove', handleMouseMove);
+    // Function to update callout orientations to face camera
+    const updateCalloutOrientations = () => {
+      if (!cameraRef.current) return;
+      
+      // Update info callouts to face camera
+      calloutsRef.current.forEach(callout => {
+        callout.lookAt(cameraRef.current!.position);
+      });
+      
+      // Update name callouts to face camera
+      nameCalloutsRef.current.forEach(callout => {
+        callout.lookAt(cameraRef.current!.position);
+      });
+      
+    };
 
     // Animation loop
     const animate = () => {
       animationRef.current = requestAnimationFrame(animate);
 
-      // Rotate the polyplane slowly (1 rotation per 60 seconds)
-      // 2π radians per 60 seconds = 0.105 radians per second
-      // At 60fps: 0.105/60 ≈ 0.00175 radians per frame
-      // if (polyplaneRef.current) {
-      //   polyplaneRef.current.rotation.z += 0.00175;
-      // }
-      controls.update();                 // <-- додай це
+      controls.update();
+      
+      // Update callout orientations to face camera
+      updateCalloutOrientations();
+      
+      // Ensure CSS3D renderer uses the same camera matrix as WebGL renderer
+      camera.updateMatrixWorld();
+      
+      // Render both WebGL and CSS3D scenes with synchronized camera
       renderer.render(scene, camera);
+      css3dRenderer.render(css3dScene, camera);
     };
 
     animate();
@@ -499,6 +453,7 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData }) => {
       camera.aspect = newWidth / newHeight;
       camera.updateProjectionMatrix();
       renderer.setSize(newWidth, newHeight);
+      css3dRenderer.setSize(newWidth, newHeight);
     };
 
     window.addEventListener('resize', handleResize);
@@ -506,11 +461,9 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData }) => {
     // Cleanup
     return () => {
 
-      // window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('resize', handleResize);
       renderer.domElement.removeEventListener("mousemove", e => onPointerMove(e, renderer, camera));
       renderer.domElement.removeEventListener("click", e => onClick(e, renderer, camera));
-      // у cleanup – removeEventListener
       
       if (animationRef.current) {
         cancelAnimationFrame(animationRef.current);
@@ -519,11 +472,273 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData }) => {
       if (currentMount && renderer.domElement) {
         currentMount.removeChild(renderer.domElement);
       }
+      if (currentMount && css3dRenderer.domElement) {
+        currentMount.removeChild(css3dRenderer.domElement);
+      }
 
       renderer.dispose();
       controls.dispose();
     };
   }, [areaData]);
+
+  // Effect to handle exhibitor details toggle
+  useEffect(() => {
+    if (!areaData || boothMeshMapRef.current.size === 0) return;
+    
+    if (showExhibitorDetails) {
+      // Show name callouts
+      createAllNameCallouts();
+    } else {
+      // Hide name callouts
+      clearNameCallouts();
+    }
+  }, [showExhibitorDetails, areaData?.areaId]); // React to toggle changes and area changes
+
+  // Effect to update booth colors when booth data changes
+  useEffect(() => {
+    if (!areaData || boothMeshMapRef.current.size === 0) return;
+    
+    // Apply status colors whenever booth data changes
+    applyBoothStatusColors();
+  }, [areaData?.booths]); // React to booth data changes
+
+  // Function to create a booth callout (ID, dimensions, area) - Now larger and higher
+  const createBoothCallout = (booth: any, position: THREE.Vector3): CSS3DObject => {
+    const calloutDiv = document.createElement('div');
+    // Add unique class for CSS targeting
+    const uniqueId = `callout-${Math.random().toString(36).substr(2, 9)}`;
+    calloutDiv.className = `info-callout ${uniqueId}`;
+    
+    calloutDiv.style.cssText = `
+      background: linear-gradient(135deg, rgba(102, 170, 255, 0.95), rgba(51, 102, 204, 0.95));
+      color: white;
+      padding: 2.25px 4.5px;
+      border-radius: 3px;
+      font-family: 'Segoe UI', Arial, sans-serif;
+      font-size: 3.75px;
+      text-align: center;
+      pointer-events: none;
+      border: 1px solid #ffffff;
+      box-shadow: 0 2.25px 4.5px rgba(102,170,255,0.4), inset 0 1px 0 rgba(255,255,255,0.3);
+      min-width: 18px;
+      z-index: 1001;
+      position: relative;
+      display: block !important;
+      visibility: visible !important;
+      opacity: 1 !important;
+      white-space: nowrap;
+      text-shadow: 0 1px 1px rgba(0,0,0,0.5);
+    `;
+    
+    
+    calloutDiv.innerHTML = `
+      <div style="font-weight: bold; margin-bottom: 0.75px; color: white; font-size: 4.5px; text-shadow: 0 1px 1px rgba(0,0,0,0.7);">${booth.id}</div>
+      <div style="font-size: 3px; color: rgba(255,255,255,0.9); line-height: 1.2;">
+        ${booth.width}m × ${booth.height}m<br>
+        Area: ${booth.area}m²
+      </div>
+    `;
+    
+    const css3dObject = new CSS3DObject(calloutDiv);
+    css3dObject.position.copy(position);
+    // Position is already set correctly with offset in the calling function
+    
+    // Scale increased to 1.5x from 0.04
+    css3dObject.scale.setScalar(0.06); // 0.04 * 1.5 = 0.06
+    
+    return css3dObject;
+  };
+
+  // Function to create a booth name callout - Now smaller and closer
+  const createBoothNameCallout = (booth: any, position: THREE.Vector3): CSS3DObject => {
+    const calloutDiv = document.createElement('div');
+    // Add unique class for CSS targeting
+    const uniqueId = `callout-${Math.random().toString(36).substr(2, 9)}`;
+    calloutDiv.className = `name-callout ${uniqueId}`;
+    
+    calloutDiv.style.cssText = `
+      background: rgba(0, 0, 0, 0.9);
+      color: white;
+      padding: 1px 3px;
+      border-radius: 2px;
+      font-family: 'Segoe UI', Arial, sans-serif;
+      font-size: 3px;
+      text-align: center;
+      pointer-events: none;
+      border: 1px solid #66aaff;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.5);
+      min-width: 18px;
+      z-index: 1000;
+      position: relative;
+      display: block !important;
+      visibility: visible !important;
+      opacity: 1 !important;
+      white-space: nowrap;
+    `;
+    
+    
+    // Truncate long names for better display
+    const displayName = booth.name.length > 18 ? booth.name.substring(0, 18) + '...' : booth.name;
+    
+    calloutDiv.innerHTML = `
+      <div style="font-weight: bold; color: #66aaff; font-size: 3px;">${displayName}</div>
+    `;
+    
+    const css3dObject = new CSS3DObject(calloutDiv);
+    css3dObject.position.copy(position);
+    // Position is already set correctly with offset in the calling function
+    
+    // Scale smaller and closer to booth
+    css3dObject.scale.setScalar(0.05); // Smaller scale for name callouts
+    
+    return css3dObject;
+  };
+  
+  // Function to clear existing callouts and their tails
+  const clearCallouts = () => {
+    if (css3dSceneRef.current) {
+      calloutsRef.current.forEach(callout => {
+        css3dSceneRef.current?.remove(callout);
+      });
+      calloutsRef.current = [];
+      
+    }
+  };
+
+  // Function to clear existing name callouts
+  const clearNameCallouts = () => {
+    if (css3dSceneRef.current) {
+      nameCalloutsRef.current.forEach(callout => {
+        css3dSceneRef.current?.remove(callout);
+      });
+      nameCalloutsRef.current = [];
+    }
+  };
+
+
+  // Function to clear all callouts (both types)
+  const clearAllCallouts = () => {
+    clearCallouts(); // This now also clears tails
+    clearNameCallouts();
+  };
+  // Function to get color based on booth status
+  const getStatusColor = (status: string): number => {
+    switch (status.toLowerCase()) {
+      case 'sold':
+        return 0x888888; // Grey
+      case 'reserved':
+        return 0x87CEEB; // Light blue
+      case 'available':
+        return 0x00FF00; // Green
+      case 'nil':
+      default:
+        return 0x00FF00; // Green (default for booths without entry)
+    }
+  };
+
+  // Function to apply status colors to booth meshes
+  const applyBoothStatusColors = () => {
+    if (!areaData) return;
+
+    console.log(`🎨 Applying booth status colors for ${areaData.areaName}`);
+    
+    // Create a map of booth IDs to their status for quick lookup
+    const boothStatusMap = new Map<string, string>();
+    areaData.booths.forEach(booth => {
+      boothStatusMap.set(booth.id, booth.status);
+    });
+    
+    // Apply colors to mapped booth meshes
+    boothMeshMapRef.current.forEach((booth, mesh) => {
+      const status = boothStatusMap.get(booth.id) || 'available'; // Default to available
+      const color = getStatusColor(status);
+      
+      // Apply color to the mesh material
+      const material = Array.isArray(mesh.material) ? mesh.material[0] : mesh.material;
+      if (material && 'color' in material) {
+        // Clone material if it's shared to avoid affecting other meshes
+        if (!mesh.userData._materialCloned) {
+          mesh.material = Array.isArray(mesh.material) 
+            ? mesh.material.map(mat => mat.clone())
+            : mesh.material.clone();
+          mesh.userData._materialCloned = true;
+        }
+        
+        const mat = Array.isArray(mesh.material) ? mesh.material[0] : mesh.material;
+        (mat as THREE.MeshStandardMaterial).color.setHex(color);
+        mesh.userData._statusColor = color;
+        mesh.userData._status = status;
+        
+        console.log(`    Applied ${status} color (${color.toString(16)}) to booth ${booth.id}`);
+      }
+    });
+    
+    // Also color any unmapped meshes that match booth patterns as available (green)
+    if (sceneRef.current) {
+      sceneRef.current.traverse((object) => {
+        if (object instanceof THREE.Mesh && object.name) {
+          // Check if this mesh looks like a booth but isn't mapped
+          if (object.name.includes('BOOTHLAYER_curve_') && !boothMeshMapRef.current.has(object)) {
+            const material = Array.isArray(object.material) ? object.material[0] : object.material;
+            if (material && 'color' in material) {
+              // Clone material if needed
+              if (!object.userData._materialCloned) {
+                object.material = Array.isArray(object.material) 
+                  ? object.material.map(mat => mat.clone())
+                  : object.material.clone();
+                object.userData._materialCloned = true;
+              }
+              
+              const mat = Array.isArray(object.material) ? object.material[0] : object.material;
+              (mat as THREE.MeshStandardMaterial).color.setHex(0x00FF00); // Green for available
+              object.userData._statusColor = 0x00FF00;
+              object.userData._status = 'available';
+              
+              console.log(`    Applied available color to unmapped booth mesh ${object.name}`);
+            }
+          }
+        }
+      });
+    }
+    
+    console.log(`  Applied colors to ${boothMeshMapRef.current.size} mapped booths`);
+  };
+
+  // Function to create name callouts for all booths with names
+  const createAllNameCallouts = () => {
+    if (!areaData || !css3dSceneRef.current) return;
+
+    console.log(`🏢 Creating name callouts for ${areaData.areaName}`);
+    
+    // Clear existing name callouts
+    clearNameCallouts();
+    
+    // Create name callouts for all booths that have names and matching meshes
+    boothMeshMapRef.current.forEach((booth, mesh) => {
+      // Only create name callout if booth has a name
+      if (booth.name && booth.name.trim() !== '') {
+        // Update mesh world matrix to ensure accurate positioning
+        mesh.updateMatrixWorld(true);
+        
+        // Calculate mesh center position in world coordinates
+        const box = new THREE.Box3().setFromObject(mesh);
+        const center = box.getCenter(new THREE.Vector3());
+        
+        // Create name callout - positioned closer to the mesh
+        const nameCalloutPosition = center.clone();
+        nameCalloutPosition.y += 0.4; // Closer position for name callouts
+        const nameCallout = createBoothNameCallout(booth, nameCalloutPosition);
+        css3dSceneRef.current?.add(nameCallout);
+        nameCalloutsRef.current.push(nameCallout);
+        
+        console.log(`    Added name callout for ${booth.id}: ${booth.name}`);
+      }
+    });
+    
+    console.log(`  Created ${nameCalloutsRef.current.length} name callouts`);
+  };
+
+
 
   if (!areaData) {
     return <div>Loading scene...</div>;

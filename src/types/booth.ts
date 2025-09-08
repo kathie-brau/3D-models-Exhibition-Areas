@@ -1,12 +1,11 @@
 export type BoothStatus = 'sold' | 'reserved' | 'available' | 'nil';
 
 export interface Booth {
-  id: string;
+  id: string; // Booth ID that corresponds to 3D model components
   name: string;
-  x: string;
-  y: string;
-  width: string;
-  height: string;
+  width: number;
+  height: number; // Length from sheets (note: API has "lenght" typo)
+  area: number; // Total area from sheets
   status: BoothStatus;
   color: string;
 }
@@ -27,10 +26,10 @@ export interface RootDimensions {
 }
 
 export interface AreaData {
+  areaId: string; // Area ID for 3D model loading (Hall_B_2, Hall_C, Hall_E_3)
   areaName: string;
-  rootDimensions: RootDimensions;
   booths: Booth[];
-  stages: Stage[];
+  // Note: rootDimensions and stages are now handled by 3D models
 }
 
 export interface StatusColors {

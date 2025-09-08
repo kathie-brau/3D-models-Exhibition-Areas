@@ -44,9 +44,6 @@ export default function BoothStatus({ areaData }: BoothStatusProps) {
         <div style={{ margin: '5px 0' }}>
           <span style={{ color: '#cccccc' }}>●</span> Available: {availableBooths}
         </div>
-        <div style={{ margin: '5px 0' }}>
-          <span style={{ color: '#ff69b4' }}>●</span> Missing Data: {nilBooths}
-        </div>
         <hr style={{ margin: '10px 0', border: '1px solid #444' }} />
         <div style={{ fontWeight: 'bold' }}>
           Total: {totalBooths} booths

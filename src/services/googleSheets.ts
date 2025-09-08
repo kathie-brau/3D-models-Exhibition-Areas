@@ -1,4 +1,5 @@
 import { BoothStatus } from '../types/booth';
+import { Booth } from '../types/booth';
 
 // Direct URL for the Google Sheet via sheetjson.com
 const SHEET_JSON_URL = 'https://sheetjson.com/spreadsheets/d/1SnWgzxlIr0R8gxCdnv0bMdHFv2RdJjwrr2zDiEkIv3g?gid=0';
@@ -34,9 +35,34 @@ const normalizeStatus = (sheetStatus: string): BoothStatus => {
   }
 };
 
-// Fetch booth status data from Google Sheets using sheetjson.com API
-export async function fetchBoothStatusFromSheets(): Promise<Map<string, BoothStatus>> {
-  const statusMap = new Map<string, BoothStatus>();
+// Helper function to safely get string value from sheet cell
+const getStringValue = (value: any, fallback: string = ''): string => {
+  if (value === null || value === undefined || value === 'undefined') {
+    return fallback;
+  }
+  return String(value).trim();
+};
+
+// Helper function to get color based on status
+const getColorForStatus = (status: BoothStatus): string => {
+  switch (status) {
+    case 'sold':
+      return '#66aaff';     // Blue
+    case 'reserved':
+      return '#ffaa66';     // Orange
+    case 'available':
+      return '#cccccc';     // Gray
+    case 'nil':
+      return '#ff69b4';     // Pink - indicates missing data
+    default:
+      return '#cccccc';
+  }
+};
+
+// Fetch complete booth information from Google Sheets using sheetjson.com API
+// Returns a map of booth ID to complete booth data
+export async function fetchBoothInfoFromSheets(): Promise<Map<string, Booth>> {
+  const boothMap = new Map<string, Booth>();
   
   try {
     // Add cache-busting timestamp to ensure fresh data
@@ -59,25 +85,48 @@ export async function fetchBoothStatusFromSheets(): Promise<Map<string, BoothSta
     
     // Process each row from the sheet
     jsonData.forEach((row: any, index: number) => {
-      const id = row.ID;
-      const status = row.Status;
+      const id = getStringValue(row.id);
       
       if (id) {
-        // Google Sheets data has priority - even if status is empty, we set it to 'nil'
-        // Handle both undefined and the string "undefined" from empty cells
-        const isEmptyStatus = !status || status === 'undefined' || status === undefined || (typeof status === 'string' && status.trim() === '');
+        // Extract all available booth information from the sheet
+        const status = getStringValue(row.status);
+        const name = getStringValue(row.name) || 'Available'; // Default name
+        const width = parseFloat(getStringValue(row.width)) || 0;
+        const height = parseFloat(getStringValue(row.lenght)) || 0; // Note: API has "lenght" typo
+        const area = parseFloat(getStringValue(row.area)) || 0;
+        
+        // Handle status normalization
+        const isEmptyStatus = !status || status === 'undefined' || status === undefined || status.trim() === '';
         const normalizedStatus = isEmptyStatus ? 'nil' : normalizeStatus(status);
-        console.log(`🏢 [${index}] Processing booth: ${id} = "${status}" → ${normalizedStatus}`);
-        statusMap.set(id, normalizedStatus);
+        
+        // Create complete booth object
+        const booth: Booth = {
+          id,
+          name,
+          width,
+          height,
+          area,
+          status: normalizedStatus,
+          color: getColorForStatus(normalizedStatus)
+        };
+        
+        console.log(`🏢 [${index}] Processing booth: ${id}`, {
+          status: `"${status}" → ${normalizedStatus}`,
+          name,
+          dimensions: `${width} × ${height}`,
+          totalArea: area
+        });
+        
+        boothMap.set(id, booth);
       } else {
         console.warn(`⚠️ [${index}] Row missing ID:`, row);
       }
     });
     
-    console.log('🗂️ Final status map:', Array.from(statusMap.entries()));
+    console.log('🗂️ Final booth information map:', Array.from(boothMap.entries()));
     
-    console.log(`📊 Loaded ${statusMap.size} booth statuses from Google Sheets`);
-    return statusMap;
+    console.log(`📊 Loaded ${boothMap.size} booth information entries from Google Sheets`);
+    return boothMap;
     
   } catch (error) {
     console.error('Error fetching booth status from Google Sheets:', error);
