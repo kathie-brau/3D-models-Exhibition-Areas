@@ -89,8 +89,8 @@ export async function fetchBoothInfoFromSheets(): Promise<Map<string, Booth>> {
       
       if (id) {
         // Extract all available booth information from the sheet
-        const status = getStringValue(row.status);
-        const name = getStringValue(row.name) || 'Available'; // Default name
+        const status = getStringValue(row.status) || 'Available';
+        const name = getStringValue(row.name); // Default name
         const width = parseFloat(getStringValue(row.width)) || 0;
         const height = parseFloat(getStringValue(row.lenght)) || 0; // Note: API has "lenght" typo
         const area = parseFloat(getStringValue(row.area)) || 0;

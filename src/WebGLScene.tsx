@@ -398,8 +398,12 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, showExhibitorDetails 
       // Check if this mesh has booth data
       const boothData = boothMeshMapRef.current.get(clickedMesh);
       if (boothData) {
-        // Show info callout for this booth (name callouts stay visible)
-        showBoothInfoCallout(boothData, clickedMesh);
+        // Only show info callout if exhibitor details is not enabled
+        // When exhibitor details is enabled, we only want to show names
+        if (!showExhibitorDetails) {
+          // Show info callout for this booth
+          showBoothInfoCallout(boothData, clickedMesh);
+        }
       }
     };
 
@@ -485,8 +489,11 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, showExhibitorDetails 
   useEffect(() => {
     if (!areaData || boothMeshMapRef.current.size === 0) return;
     
+    // Clear all info callouts first
+    clearCallouts();
+    
     if (showExhibitorDetails) {
-      // Show name callouts
+      // Show only name callouts
       createAllNameCallouts();
     } else {
       // Hide name callouts
