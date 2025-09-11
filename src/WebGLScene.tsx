@@ -400,7 +400,7 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, showExhibitorDetails 
       if (boothData) {
         // Only show info callout if exhibitor details is not enabled
         // When exhibitor details is enabled, we only want to show names
-        if (!showExhibitorDetails) {
+        if (boothData.status != 'sold') {
           // Show info callout for this booth
           showBoothInfoCallout(boothData, clickedMesh);
         }
