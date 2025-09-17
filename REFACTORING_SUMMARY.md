@@ -36,7 +36,7 @@ export interface Booth {
 ### 2. **Google Sheets API Integration** (`src/services/googleSheets.ts`)
 - **Function**: `fetchBoothInfoFromSheets()` 
 - **Returns**: `Map<string, Booth>` (complete booth objects)
-- **Data Source**: https://sheetjson.com/spreadsheets/d/1SnWgzxlIr0R8gxCdnv0bMdHFv2RdJjwrr2zDiEkIv3g?gid=0
+- **Data Source**: https://sheetjson.com/spreadsheets/d/1nJL3jkJCrJZy2acn60bZeVYXmw4m_wa6An68Oqjb8ds?gid=0
 
 **API Response Structure**:
 ```json

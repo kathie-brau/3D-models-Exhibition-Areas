@@ -1,14 +1,34 @@
 import { BoothStatus } from '../types/booth';
 import { Booth } from '../types/booth';
 
-// Direct URL for the Google Sheet via sheetjson.com
-const SHEET_JSON_URL = 'https://sheetjson.com/spreadsheets/d/1SnWgzxlIr0R8gxCdnv0bMdHFv2RdJjwrr2zDiEkIv3g?gid=0';
+// URLs for different Google Sheets via sheetjson.com
+const SHEET_URLS = {
+  // MainExhibitionHall (OTD TechDays 2026)
+  techDays: 'https://sheetjson.com/spreadsheets/d/1nJL3jkJCrJZy2acn60bZeVYXmw4m_wa6An68Oqjb8ds?gid=0',
+  // All OTD Energy 2027 areas (Hall_B_2, Hall_C, Hall_E_3, all_in_one)
+  energy: 'https://sheetjson.com/spreadsheets/d/18ib8qaAeBJtlVKJN6xmyCLfyD_9LLvyojxGFMl-jvYY?gid=0'
+};
+
+// Function to get the correct sheet URL based on areaId
+const getSheetUrlForArea = (areaId: string): string => {
+  switch (areaId) {
+    case 'MainExhibitionHall':
+      return SHEET_URLS.techDays;
+    case 'Hall_B_2':
+    case 'Hall_C':
+    case 'Hall_E_3':
+    case 'all_in_one':
+    default:
+      return SHEET_URLS.energy;
+  }
+};
 
 // Add test function to window for manual testing
-(window as any).testSheetJson = async () => {
+(window as any).testSheetJson = async (areaId: string = 'energy') => {
   try {
-    console.log('🧪 Testing sheetjson.com URL directly...');
-    const cacheBustUrl = `${SHEET_JSON_URL}&_=${Date.now()}`;
+    console.log(`🧪 Testing sheetjson.com URL for area: ${areaId}`);
+    const sheetUrl = getSheetUrlForArea(areaId);
+    const cacheBustUrl = `${sheetUrl}&_=${Date.now()}`;
     console.log('🧪 Cache-bust URL:', cacheBustUrl);
     
     const response = await fetch(cacheBustUrl);
@@ -61,13 +81,15 @@ const getColorForStatus = (status: BoothStatus): string => {
 
 // Fetch complete booth information from Google Sheets using sheetjson.com API
 // Returns a map of booth ID to complete booth data
-export async function fetchBoothInfoFromSheets(): Promise<Map<string, Booth>> {
+export async function fetchBoothInfoFromSheets(areaId: string): Promise<Map<string, Booth>> {
   const boothMap = new Map<string, Booth>();
   
   try {
+    // Get the correct sheet URL for this area
+    const sheetUrl = getSheetUrlForArea(areaId);
     // Add cache-busting timestamp to ensure fresh data
-    const cacheBustUrl = `${SHEET_JSON_URL}&_=${Date.now()}`;
-    console.log('🌐 Fetching from URL with cache-bust:', cacheBustUrl);
+    const cacheBustUrl = `${sheetUrl}&_=${Date.now()}`;
+    console.log(`🌐 Fetching from URL for area ${areaId} with cache-bust:`, cacheBustUrl);
     
     const response = await fetch(cacheBustUrl);
     console.log('📡 Response status:', response.status, response.statusText);

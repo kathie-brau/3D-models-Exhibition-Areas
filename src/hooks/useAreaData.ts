@@ -9,43 +9,53 @@ export function useAreaData(areaId: string, hotReload: boolean = true) {
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const lastDataHashRef = useRef<string | null>(null);
 
+  // Determine event type to avoid reloading data for individual halls
+  const getEventType = (areaId: string): string => {
+    if (areaId === 'MainExhibitionHall') {
+      return 'techdays'; // OTD Tech Days 2026
+    }
+    // All energy areas use the same data
+    return 'energy'; // OTD Energy 2027
+  };
+
   const loadAreaDataFromSheets = async () => {
     try {
       setError(null);
       setLoading(true);
       
-      console.log(`📈 Loading booth data from Google Sheets for area: ${areaId}`);
+      const eventType = getEventType(areaId);
+      console.log(`📈 Loading booth data for event: ${eventType} (requested area: ${areaId})`);
       
-      // Fetch all booth data from Google Sheets
-      const boothMap = await fetchBoothInfoFromSheets();
+      // Use areaId for sheet selection, but eventType for data caching
+      const boothMap = await fetchBoothInfoFromSheets(areaId);
       
-      // Filter booths by area based on booth ID prefix
-      // B-xxxx → Hall_B_2, C-xxxx → Hall_C, E-xxxx → Hall_E_3
-      // MainExhibitionHall → Show all booths (different event)
-      let boothPrefix = '';
-      switch (areaId) {
-        case 'Hall_B_2':
-          boothPrefix = 'B-';
-          break;
-        case 'Hall_C':
-          boothPrefix = 'C-';
-          break;
-        case 'Hall_E_3':
-          boothPrefix = 'E-';
-          break;
-        case 'MainExhibitionHall':
-          boothPrefix = ''; // Show all booths for MainExhibitionHall
-          break;
-      }
+      // For Energy 2027 areas, show ALL energy booths on the combined model
+      // For MainExhibitionHall, show only its booths
+      const isEnergyArea = ['Hall_B_2', 'Hall_C', 'Hall_E_3', 'all_in_one'].includes(areaId);
       
       const allBooths = Array.from(boothMap.values());
-      const filteredBooths = boothPrefix ? 
-        allBooths.filter(booth => booth.id.startsWith(boothPrefix)) : 
-        allBooths;
+      let filteredBooths;
+      
+      if (isEnergyArea) {
+        // For any energy area, show ALL energy booths (B-, C-, E-)
+        filteredBooths = allBooths.filter(booth => 
+          booth.id.startsWith('B-') || 
+          booth.id.startsWith('C-') || 
+          booth.id.startsWith('E-')
+        );
+        console.log(`🌍 Energy area selected: showing combined booth data from all energy halls`);
+      } else {
+        // For MainExhibitionHall, show all booths from that event
+        filteredBooths = allBooths;
+        console.log(`🏗️ MainExhibitionHall selected: showing all booths from that event`);
+      }
       
       // Determine area name based on areaId
       let areaName = 'Exhibition Area';
       switch (areaId) {
+        case 'all_in_one':
+          areaName = 'Exhibition OTD Energy';
+          break;
         case 'Hall_C':
           areaName = 'Exhibition Hall C';
           break;
@@ -60,7 +70,10 @@ export function useAreaData(areaId: string, hotReload: boolean = true) {
           break;
       }
       
-      console.log(`🏢 Found ${filteredBooths.length} booths for area ${areaName} (prefix: ${boothPrefix || 'none'})`);
+      console.log(`🏢 Found ${filteredBooths.length} booths for area ${areaName}`);
+      if (isEnergyArea) {
+        console.log(`  → Combined data from Hall B, C, and E`);
+      }
       
       // Create area data structure
       const areaData: AreaData = {
@@ -103,9 +116,14 @@ export function useAreaData(areaId: string, hotReload: boolean = true) {
   };
 
 
-  // Load area data on mount and when area changes
+  // Get current event type to track changes
+  const currentEventType = getEventType(areaId);
+
+  // Load area data on mount and when EVENT TYPE changes (not individual areas)
   useEffect(() => {
     if (!areaId) return;
+
+    console.log(`🔄 Event type: ${currentEventType} for area: ${areaId}`);
 
     // Load initial data
     loadAreaDataFromSheets();
@@ -123,7 +141,7 @@ export function useAreaData(areaId: string, hotReload: boolean = true) {
       }
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [areaId, hotReload]);
+  }, [currentEventType, hotReload]); // Only reload when event type changes
 
   return { data, loading, error };
 }

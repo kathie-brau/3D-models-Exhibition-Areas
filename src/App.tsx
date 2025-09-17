@@ -50,6 +50,7 @@ const App: React.FC = () => {
       <BoothStatus areaData={areaData} />
       <WebGLScene 
         areaData={areaData} 
+        currentArea={currentArea}
         showExhibitorDetails={showExhibitorDetails}
       />
     </div>

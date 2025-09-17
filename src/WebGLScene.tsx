@@ -7,10 +7,11 @@ import { CSS3DRenderer, CSS3DObject } from 'three/examples/jsm/renderers/CSS3DRe
 
 interface WebGLSceneProps {
   areaData: AreaData | null;
+  currentArea: string;
   showExhibitorDetails: boolean;
 }
 
-const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, showExhibitorDetails }) => {
+const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhibitorDetails }) => {
   const mountRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
@@ -21,10 +22,36 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, showExhibitorDetails 
   const nameCalloutsRef = useRef<CSS3DObject[]>([]); // For name callouts
   const boothMeshMapRef = useRef<Map<THREE.Mesh, any>>(new Map()); // Map mesh to booth data
   const cameraRef = useRef<THREE.Camera | null>(null); // Reference to camera for billboard effect
+  const controlsRef = useRef<OrbitControls | null>(null); // Reference to controls for camera positioning
+  const currentModelRef = useRef<string | null>(null); // Track currently loaded model to avoid unnecessary reloads
 
+  // Helper function to determine which model should be loaded
+  const getModelPath = (areaId: string): string => {
+    // All energy areas use the combined model
+    if (areaId === 'Hall_B_2' || areaId === 'Hall_C' || areaId === 'Hall_E_3' || areaId === 'all_in_one') {
+      return '/3D-models-Exhibition-Areas/models/all_in_one.glb';
+    }
+    // Other areas use their individual models
+    return '/3D-models-Exhibition-Areas/models/' + areaId + '.glb';
+  };
+
+  // Helper function to determine model type for comparison
+  const getModelType = (areaId: string): string => {
+    if (areaId === 'Hall_B_2' || areaId === 'Hall_C' || areaId === 'Hall_E_3' || areaId === 'all_in_one') {
+      return 'energy'; // All energy areas share the same model
+    }
+    return areaId; // Other areas are unique
+  };
+
+  // Memoize the current model type to detect changes
+  const currentModelType = useMemo(() => {
+    return areaData ? getModelType(areaData.areaId) : null;
+  }, [areaData]);
 
   useEffect(() => {
     if (!areaData) return;
+    
+    console.log(`🏗️ Main useEffect triggered - Area: ${areaData.areaId}`);
 
     const currentMount = mountRef.current;
     if (!currentMount) return;
@@ -76,6 +103,7 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, showExhibitorDetails 
     controls.minDistance = 2;           // min. distance
     controls.maxDistance = 50;          // max. distance
     controls.enablePan = true;          // panoramic view, if necessary
+    controlsRef.current = controls;     // Store controls reference
 
     // Function to map booth meshes to their data (for click handling)
     const mapBoothMeshes = () => {
@@ -410,8 +438,17 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, showExhibitorDetails 
     renderer.domElement.addEventListener("mousemove", e => onPointerMove(e, renderer, camera));
     renderer.domElement.addEventListener("click", e => onClick(e, renderer, camera));
     
-    // Use areaId directly from areaData
-    initModel('/3D-models-Exhibition-Areas/models/'+areaData.areaId+'.glb');
+    // Load the appropriate model based on current area
+    const modelPath = getModelPath(currentArea);
+    const currentModelType = getModelType(currentArea);
+    
+    // For now, always load the model to ensure it displays properly
+    console.log(`🏗️ Loading model: ${modelPath} for area: ${currentArea}`);
+    console.log(`🌍 Will show ${areaData.booths.length} booths on this model`);
+    currentModelRef.current = modelPath;
+    initModel(modelPath);
+    
+    // Initial camera positioning will be handled by the separate useEffect
 
 
     // Function to update callout orientations to face camera
@@ -431,10 +468,21 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, showExhibitorDetails 
     };
 
     // Animation loop
+    let lastLogTime = 0;
     const animate = () => {
       animationRef.current = requestAnimationFrame(animate);
 
       controls.update();
+      
+      // Log camera position and target every 1 second
+      const now = Date.now();
+      if (now - lastLogTime > 1000) {
+        const pos = camera.position;
+        const target = controls.target;
+        console.log(`📹 Camera Position: (${pos.x.toFixed(2)}, ${pos.y.toFixed(2)}, ${pos.z.toFixed(2)})`);
+        console.log(`🎯 Camera Look-At: (${target.x.toFixed(2)}, ${target.y.toFixed(2)}, ${target.z.toFixed(2)})`);
+        lastLogTime = now;
+      }
       
       // Update callout orientations to face camera
       updateCalloutOrientations();
@@ -483,7 +531,158 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, showExhibitorDetails 
       renderer.dispose();
       controls.dispose();
     };
-  }, [areaData]);
+  }, [areaData]); // React to areaData changes
+
+  // Effect to handle area-specific updates without reloading the model
+  useEffect(() => {
+    if (!areaData || !sceneRef.current || currentModelRef.current !== getModelPath(areaData.areaId)) {
+      // Skip if no area data, no scene, or if model needs to be reloaded (handled by main effect)
+      return;
+    }
+
+    // Model is already loaded, just update booth mappings and colors
+    console.log(`🔄 Area changed to ${areaData.areaId}, updating booth data without reloading model`);
+    
+    const mapBoothMeshes = () => {
+      if (!areaData || !sceneRef.current) return;
+
+      console.log(`🏢 Mapping booth meshes for ${areaData.areaName}`);
+      console.log(`  Booths: ${areaData.booths.length}`);
+      
+      // Clear existing mesh map
+      boothMeshMapRef.current.clear();
+      
+      // Map each booth to its corresponding mesh
+      areaData.booths.forEach((booth) => {
+        // Try multiple mesh name patterns
+        const possibleMeshNames = [
+          `BOOTHLAYER_curve_.${booth.id}`,
+          `BOOTHLAYER_curve_${booth.id}`,
+          `${booth.id}`,
+          `Booth_${booth.id}`,
+          `booth_${booth.id}`,
+          `${booth.id.replace('-', '_')}`,
+          `${booth.id.toLowerCase()}`,
+          `${booth.id.toUpperCase()}`
+        ];
+        
+        let foundMesh: THREE.Mesh | null = null;
+        
+        // Search through all meshes in the scene with different naming patterns
+        for (const meshName of possibleMeshNames) {
+          sceneRef.current?.traverse((object) => {
+            if (object instanceof THREE.Mesh && object.name === meshName) {
+              foundMesh = object;
+            }
+          });
+          if (foundMesh) break;
+        }
+        
+        // Also try partial matches
+        if (!foundMesh) {
+          sceneRef.current?.traverse((object) => {
+            if (object instanceof THREE.Mesh && object.name) {
+              if (object.name.includes(booth.id) || 
+                  object.name.includes(booth.id.replace('-', '_')) ||
+                  object.name.includes(booth.id.replace('-', ''))) {
+                foundMesh = object;
+              }
+            }
+          });
+        }
+        
+        if (foundMesh !== null) {
+          // Map this mesh to its booth data
+          boothMeshMapRef.current.set(foundMesh as THREE.Mesh, booth);
+        }
+      });
+      
+      console.log(`  Mapped ${boothMeshMapRef.current.size} booth meshes`);
+    };
+
+    // Apply booth status colors
+    const applyBoothStatusColors = () => {
+      boothMeshMapRef.current.forEach((booth, mesh) => {
+        if (mesh.material && booth.color) {
+          // Clone material to avoid affecting shared materials
+          if (!Array.isArray(mesh.material)) {
+            mesh.material = mesh.material.clone();
+          }
+          const material = Array.isArray(mesh.material) ? mesh.material[0] : mesh.material;
+          if ((material as THREE.MeshStandardMaterial)?.color) {
+            (material as THREE.MeshStandardMaterial).color.setHex(parseInt(booth.color.replace('#', '0x')));
+          }
+        }
+      });
+    };
+
+    // Execute the updates with proper timing
+    setTimeout(() => {
+      mapBoothMeshes();
+      setTimeout(() => {
+        applyBoothStatusColors();
+      }, 50);
+    }, 50);
+
+  }, [areaData?.areaId, areaData?.booths]); // React to area ID and booth changes
+
+  // Effect to handle camera positioning when area changes
+  useEffect(() => {
+    if (!areaData || !cameraRef.current || !controlsRef.current) return;
+
+    // Function to focus camera on specific area within the combined model
+    const focusCameraOnArea = (areaId: string, controls: OrbitControls, camera: THREE.Camera) => {
+      const cameraPositions = {
+        'Hall_B_2': { x: 7.87, y: 5.16, z: -1.22, targetX: 7.17, targetY: -0.13, targetZ: -2.26 }, // Hall B at custom position
+        'Hall_C': { x: 0, y: 3.75, z: 2, targetX: 0, targetY: 0, targetZ: 0 },     // Hall C at X=0 (4x zoom: 15/4=3.75, 8/4=2)
+        'Hall_E_3': { x: -4.05, y: 4.56, z: -0.8, targetX: -4.74, targetY: 0.56, targetZ: -2.06 }, // Hall E at X=-5 (4x zoom: 15/4=3.75, 8/4=2)
+        'all_in_one': { x: 0, y: 6.25, z: 3.75, targetX: 0, targetY: 0, targetZ: 0 } // Full overview (4x zoom: 25/4=6.25, 15/4=3.75)
+      };
+      
+      const position = cameraPositions[areaId as keyof typeof cameraPositions];
+      if (position) {
+        console.log(`📹 Focusing camera on ${areaId} at position:`, position);
+        
+        // Animate camera to new position
+        const startPosition = camera.position.clone();
+        const startTarget = controls.target.clone();
+        const targetPosition = new THREE.Vector3(position.x, position.y, position.z);
+        const targetLookAt = new THREE.Vector3(position.targetX, position.targetY, position.targetZ);
+        
+        let animationProgress = 0;
+        const animationDuration = 1000; // 1 second
+        const startTime = Date.now();
+        
+        const animateCamera = () => {
+          const elapsed = Date.now() - startTime;
+          animationProgress = Math.min(elapsed / animationDuration, 1);
+          
+          // Smooth easing function
+          const eased = 1 - Math.pow(1 - animationProgress, 3);
+          
+          // Interpolate camera position
+          camera.position.lerpVectors(startPosition, targetPosition, eased);
+          
+          // Interpolate controls target
+          controls.target.lerpVectors(startTarget, targetLookAt, eased);
+          controls.update();
+          
+          if (animationProgress < 1) {
+            requestAnimationFrame(animateCamera);
+          }
+        };
+        
+        animateCamera();
+      }
+    };
+
+    // Focus camera after a short delay to ensure model is loaded
+    const timer = setTimeout(() => {
+      focusCameraOnArea(currentArea, controlsRef.current!, cameraRef.current!);
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [currentArea]); // React to current area changes
 
   // Effect to handle exhibitor details toggle
   useEffect(() => {

@@ -17,6 +17,7 @@ const otdTechDays2026Areas: Area[] = [
 ];
 
 const otdEnergy2027Areas: Area[] = [
+  { id: 'all_in_one', name: 'Exhibition OTD Energy' },
   { id: 'Hall_B_2', name: 'Exhibition Hall B' },
   { id: 'Hall_C', name: 'Exhibition Hall C' },
   { id: 'Hall_E_3', name: 'Exhibition Hall E' }
