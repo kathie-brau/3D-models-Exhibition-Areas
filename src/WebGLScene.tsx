@@ -1,6 +1,6 @@
-import React, { useRef, useEffect, useMemo } from 'react';
+import React, { useRef, useEffect } from 'react';
 import * as THREE from 'three';
-import { AreaData, BoothStatus, StatusColors } from './types/booth';
+import { AreaData } from './types/booth';
 import { GLTF, GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader";
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import { CSS3DRenderer, CSS3DObject } from 'three/examples/jsm/renderers/CSS3DRenderer';
@@ -35,18 +35,7 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
     return '/3D-models-Exhibition-Areas/models/' + areaId + '.glb';
   };
 
-  // Helper function to determine model type for comparison
-  const getModelType = (areaId: string): string => {
-    if (areaId === 'Hall_B_2' || areaId === 'Hall_C' || areaId === 'Hall_E_3' || areaId === 'all_in_one') {
-      return 'energy'; // All energy areas share the same model
-    }
-    return areaId; // Other areas are unique
-  };
 
-  // Memoize the current model type to detect changes
-  const currentModelType = useMemo(() => {
-    return areaData ? getModelType(areaData.areaId) : null;
-  }, [areaData]);
 
   useEffect(() => {
     if (!areaData) return;
@@ -137,13 +126,19 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
         let foundMesh: THREE.Mesh | null = null;
         
         // Search through all meshes in the scene with different naming patterns
-        for (const meshName of possibleMeshNames) {
+        const findMeshByName = (nameToFind: string): THREE.Mesh | null => {
+          let mesh: THREE.Mesh | null = null;
           scene.traverse((object) => {
-            if (object instanceof THREE.Mesh && object.name === meshName) {
-              foundMesh = object;
-              console.log(`    Found mesh: ${meshName}`);
+            if (object instanceof THREE.Mesh && object.name === nameToFind) {
+              mesh = object;
+              console.log(`    Found mesh: ${nameToFind}`);
             }
           });
+          return mesh;
+        };
+        
+        for (const meshName of possibleMeshNames) {
+          foundMesh = findMeshByName(meshName);
           if (foundMesh) break;
         }
         
@@ -185,7 +180,12 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
 
     // Function to show info callout for a specific booth (on click)
     const showBoothInfoCallout = (booth: any, mesh: THREE.Mesh) => {
-      if (!css3dScene) return;
+      console.log(`📝 showBoothInfoCallout called for booth:`, booth);
+      
+      if (!css3dScene) {
+        console.error('❌ css3dScene not available');
+        return;
+      }
       
       // Clear only info callouts (keep name callouts visible)
       clearCallouts();
@@ -197,6 +197,8 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
       const box = new THREE.Box3().setFromObject(mesh);
       const center = box.getCenter(new THREE.Vector3());
       
+      console.log(`📏 Callout position:`, center);
+      
       // Create info callout (ID, dimensions, area) - positioned higher above the mesh
       const infoCalloutPosition = center.clone();
       infoCalloutPosition.y += 1.2; // Higher position for info callouts
@@ -204,7 +206,7 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
       css3dScene.add(infoCallout);
       calloutsRef.current.push(infoCallout);
       
-      console.log(`Showing info callout for booth ${booth.id}`);
+      console.log(`✅ Info callout created and added for booth ${booth.id}`);
     };
 
 
@@ -285,9 +287,14 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
         };
 
         const markInteractives = (root: THREE.Object3D) => {
+          let interactiveCount = 0;
           root.traverse((o) => {
             if (isMesh(o)) {
-              o.userData._interactive = matchesAllowed(o.name);
+              const isInteractive = matchesAllowed(o.name);
+              o.userData._interactive = isInteractive;
+              if (isInteractive) {
+                interactiveCount++;
+              }
               // preserve the original color
               const mat = Array.isArray(o.material) ? o.material[0] : o.material;
               if ((mat as THREE.MeshStandardMaterial)?.color) {
@@ -295,6 +302,7 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
               }
             }
           });
+          console.log(`🎯 Total interactive meshes marked: ${interactiveCount}`);
         };
         markInteractives(rootModel);
 
@@ -321,7 +329,7 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
         const box = new THREE.Box3().setFromObject(rootModel);
         const size = box.getSize(new THREE.Vector3());
         
-        const center = box.getCenter(new THREE.Vector3());
+        box.getCenter(new THREE.Vector3());
         const maxDim = Math.max(size.x, size.y, size.z);
         const scale = (10 / (maxDim || 1))* 2;
         rootModel.scale.setScalar(scale);
@@ -359,7 +367,10 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
     const getIntersectors = (): THREE.Object3D[] => {
       const list: THREE.Object3D[] = [];
       rootModel?.traverse(o => {
-        if (isMesh(o) && o.userData._interactive) list.push(o);
+        if (isMesh(o) && o.userData._interactive) {
+          // All interactive booth meshes are now clickable (including sold/reserved)
+          list.push(o);
+        }
       });
       return list;
     };
@@ -415,6 +426,7 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
     const onClick = (e: MouseEvent, renderer: THREE.WebGLRenderer, camera: THREE.Camera) => {
       setMouseFromEvent(e, renderer);
       const hits = pickInteractive(camera);
+      
       if (!hits.length) {
         // Clicked on empty space - hide only info callouts (keep name callouts)
         clearCallouts();
@@ -425,13 +437,10 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
       
       // Check if this mesh has booth data
       const boothData = boothMeshMapRef.current.get(clickedMesh);
+      
       if (boothData) {
-        // Only show info callout if exhibitor details is not enabled
-        // When exhibitor details is enabled, we only want to show names
-        if (boothData.status != 'sold') {
-          // Show info callout for this booth
-          showBoothInfoCallout(boothData, clickedMesh);
-        }
+        // Show info callout for any booth (including sold/reserved)
+        showBoothInfoCallout(boothData, clickedMesh);
       }
     };
 
@@ -440,7 +449,6 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
     
     // Load the appropriate model based on current area
     const modelPath = getModelPath(currentArea);
-    const currentModelType = getModelType(currentArea);
     
     // For now, always load the model to ensure it displays properly
     console.log(`🏗️ Loading model: ${modelPath} for area: ${currentArea}`);
@@ -531,6 +539,7 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
       renderer.dispose();
       controls.dispose();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [areaData]); // React to areaData changes
 
   // Effect to handle area-specific updates without reloading the model
@@ -569,12 +578,18 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
         let foundMesh: THREE.Mesh | null = null;
         
         // Search through all meshes in the scene with different naming patterns
-        for (const meshName of possibleMeshNames) {
+        const findMeshByName = (nameToFind: string): THREE.Mesh | null => {
+          let mesh: THREE.Mesh | null = null;
           sceneRef.current?.traverse((object) => {
-            if (object instanceof THREE.Mesh && object.name === meshName) {
-              foundMesh = object;
+            if (object instanceof THREE.Mesh && object.name === nameToFind) {
+              mesh = object;
             }
           });
+          return mesh;
+        };
+        
+        for (const meshName of possibleMeshNames) {
+          foundMesh = findMeshByName(meshName);
           if (foundMesh) break;
         }
         
@@ -624,6 +639,7 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
       }, 50);
     }, 50);
 
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [areaData?.areaId, areaData?.booths]); // React to area ID and booth changes
 
   // Effect to handle camera positioning when area changes
@@ -682,7 +698,8 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
     }, 500);
 
     return () => clearTimeout(timer);
-  }, [currentArea]); // React to current area changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentArea, areaData]); // React to current area changes
 
   // Effect to handle exhibitor details toggle
   useEffect(() => {
@@ -698,6 +715,7 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
       // Hide name callouts
       clearNameCallouts();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showExhibitorDetails, areaData?.areaId]); // React to toggle changes and area changes
 
   // Effect to update booth colors when booth data changes
@@ -706,6 +724,7 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
     
     // Apply status colors whenever booth data changes
     applyBoothStatusColors();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [areaData?.booths]); // React to booth data changes
 
   // Function to create a booth callout (ID, dimensions, area) - Now larger and higher
@@ -718,39 +737,67 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
     calloutDiv.style.cssText = `
       background: linear-gradient(135deg, rgba(102, 170, 255, 0.95), rgba(51, 102, 204, 0.95));
       color: white;
-      padding: 2.25px 4.5px;
-      border-radius: 3px;
+      padding: 1.125px 2.25px;
+      border-radius: 1.5px;
       font-family: 'Segoe UI', Arial, sans-serif;
-      font-size: 3.75px;
+      font-size: 1.875px;
       text-align: center;
       pointer-events: none;
-      border: 1px solid #ffffff;
-      box-shadow: 0 2.25px 4.5px rgba(102,170,255,0.4), inset 0 1px 0 rgba(255,255,255,0.3);
-      min-width: 18px;
+      border: 0.5px solid #ffffff;
+      box-shadow: 0 1.125px 2.25px rgba(102,170,255,0.4), inset 0 0.5px 0 rgba(255,255,255,0.3);
+      min-width: 9px;
       z-index: 1001;
       position: relative;
       display: block !important;
       visibility: visible !important;
       opacity: 1 !important;
       white-space: nowrap;
-      text-shadow: 0 1px 1px rgba(0,0,0,0.5);
+      text-shadow: 0 0.5px 0.5px rgba(0,0,0,0.5);
     `;
     
     
-    calloutDiv.innerHTML = `
-      <div style="font-weight: bold; margin-bottom: 0.75px; color: white; font-size: 4.5px; text-shadow: 0 1px 1px rgba(0,0,0,0.7);">${booth.id}</div>
-      <div style="font-size: 3px; color: rgba(255,255,255,0.9); line-height: 1.2;">
-        ${booth.width}m × ${booth.height}m<br>
-        Area: ${booth.area}m²
-      </div>
-    `;
+    // Check if booth has a status record (meaning it exists in Google Sheets)
+    const hasStatusRecord = booth.status && booth.status !== 'nil';
+    const isSoldOrReserved = booth.status && (booth.status.toLowerCase() === 'sold' || booth.status.toLowerCase() === 'reserved');
+    
+    if (isSoldOrReserved) {
+      // Show status (Sold/Reserved) and company name for sold or reserved booths
+      const statusText = booth.status.charAt(0).toUpperCase() + booth.status.slice(1).toLowerCase();
+      let content = statusText;
+      if (booth.name && booth.name.trim() !== '') {
+        content += `<br><br>${booth.name}`;
+      }
+      calloutDiv.innerHTML = `
+        <div style="font-weight: bold; margin-bottom: 0.375px; color: white; font-size: 2.25px; text-shadow: 0 0.5px 0.5px rgba(0,0,0,0.7);">${booth.id}</div>
+        <div style="font-size: 1.5px; color: rgba(255,255,255,0.9); line-height: 1.2;">
+          ${content}
+        </div>
+      `;
+    } else if (hasStatusRecord && booth.name) {
+      // Show company name if there's a status record and it's not sold/reserved
+      calloutDiv.innerHTML = `
+        <div style="font-weight: bold; margin-bottom: 0.375px; color: white; font-size: 2.25px; text-shadow: 0 0.5px 0.5px rgba(0,0,0,0.7);">${booth.id}</div>
+        <div style="font-size: 1.5px; color: rgba(255,255,255,0.9); line-height: 1.2;">
+          ${booth.name}
+        </div>
+      `;
+    } else {
+      // Show dimensions if no status record or no company name
+      calloutDiv.innerHTML = `
+        <div style="font-weight: bold; margin-bottom: 0.375px; color: white; font-size: 2.25px; text-shadow: 0 0.5px 0.5px rgba(0,0,0,0.7);">${booth.id}</div>
+        <div style="font-size: 1.5px; color: rgba(255,255,255,0.9); line-height: 1.2;">
+          ${booth.width}m × ${booth.height}m<br><br>
+          Area: ${booth.area}m²
+        </div>
+      `;
+    }
     
     const css3dObject = new CSS3DObject(calloutDiv);
     css3dObject.position.copy(position);
     // Position is already set correctly with offset in the calling function
     
-    // Scale increased to 1.5x from 0.04
-    css3dObject.scale.setScalar(0.06); // 0.04 * 1.5 = 0.06
+    // Scale reduced to half from 0.06
+    css3dObject.scale.setScalar(0.03); // 0.06 / 2 = 0.03
     
     return css3dObject;
   };
@@ -765,15 +812,15 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
     calloutDiv.style.cssText = `
       background: rgba(0, 0, 0, 0.9);
       color: white;
-      padding: 1px 3px;
-      border-radius: 2px;
+      padding: 0.5px 1.5px;
+      border-radius: 1px;
       font-family: 'Segoe UI', Arial, sans-serif;
       font-size: 3px;
       text-align: center;
       pointer-events: none;
-      border: 1px solid #66aaff;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.5);
-      min-width: 18px;
+      border: 0.5px solid #66aaff;
+      box-shadow: 0 0.5px 1.5px rgba(0,0,0,0.5);
+      min-width: 9px;
       z-index: 1000;
       position: relative;
       display: block !important;
@@ -794,8 +841,8 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
     css3dObject.position.copy(position);
     // Position is already set correctly with offset in the calling function
     
-    // Scale smaller and closer to booth
-    css3dObject.scale.setScalar(0.05); // Smaller scale for name callouts
+    // Scale adjusted for name callouts when show exhibitor details is enabled - made 2x bigger
+    css3dObject.scale.setScalar(0.05 / 3); // 3x smaller scale for name callouts (made 2x bigger from previous 6x)
     
     return css3dObject;
   };
@@ -822,11 +869,6 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
   };
 
 
-  // Function to clear all callouts (both types)
-  const clearAllCallouts = () => {
-    clearCallouts(); // This now also clears tails
-    clearNameCallouts();
-  };
   // Function to get color based on booth status
   const getStatusColor = (status: string): number => {
     switch (status.toLowerCase()) {

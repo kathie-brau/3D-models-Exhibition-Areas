@@ -17,7 +17,6 @@ export default function BoothStatus({ areaData }: BoothStatusProps) {
   const soldBooths = statusCounts.sold || 0;
   const reservedBooths = statusCounts.reserved || 0;
   const availableBooths = statusCounts.available || 0;
-  const nilBooths = statusCounts.nil || 0;
 
   return (
     <div style={{
