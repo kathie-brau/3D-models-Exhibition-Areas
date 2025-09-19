@@ -24,6 +24,12 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
   const cameraRef = useRef<THREE.Camera | null>(null); // Reference to camera for billboard effect
   const controlsRef = useRef<OrbitControls | null>(null); // Reference to controls for camera positioning
   const currentModelRef = useRef<string | null>(null); // Track currently loaded model to avoid unnecessary reloads
+  const lastInteractionTimeRef = useRef<number>(Date.now()); // Track last user interaction
+  const autoTourTimeoutRef = useRef<NodeJS.Timeout | null>(null); // Auto-tour timeout reference
+  const autoTourActiveRef = useRef<boolean>(false); // Track if auto-tour is active
+  const currentAutoTourIndexRef = useRef<number>(0); // Current hall index in auto-tour
+  const autoTourAnimationRef = useRef<number | null>(null); // Auto-tour animation frame reference
+  const autoTourStartTimeRef = useRef<number>(0); // Auto-tour animation start time
 
   // Helper function to determine which model should be loaded
   const getModelPath = (areaId: string): string => {
@@ -85,6 +91,169 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
       currentMount.appendChild(css3dRenderer.domElement);
     }
 
+    // Auto-tour hall sequence (circular)
+    const autoTourHalls = ['Hall_B_2', 'Hall_C', 'Hall_E_3', 'all_in_one'];
+    
+    // Function to focus camera on specific area within the combined model
+    const focusCameraOnArea = (areaId: string, controls: OrbitControls, camera: THREE.Camera, isAutoTour: boolean = false) => {
+      const cameraPositions = {
+        'Hall_B_2': { x: 7.87, y: 5.16, z: -1.22, targetX: 7.17, targetY: -0.13, targetZ: -2.26 }, // Hall B at custom position
+        'Hall_C': { x: 0, y: 3.75, z: 2, targetX: 0, targetY: 0, targetZ: 0 },     // Hall C at X=0 (4x zoom: 15/4=3.75, 8/4=2)
+        'Hall_E_3': { x: -4.05, y: 4.56, z: -0.8, targetX: -4.74, targetY: 0.56, targetZ: -2.06 }, // Hall E at X=-5 (4x zoom: 15/4=3.75, 8/4=2)
+        'all_in_one': { x: 0, y: 6.25, z: 3.75, targetX: 0, targetY: 0, targetZ: 0 } // Full overview (4x zoom: 25/4=6.25, 15/4=3.75)
+      };
+      
+      const position = cameraPositions[areaId as keyof typeof cameraPositions];
+      if (position) {
+        const logPrefix = isAutoTour ? '🔄 Auto-tour' : '📹';
+        console.log(`${logPrefix} Focusing camera on ${areaId} at position:`, position);
+        
+        // Animate camera to new position
+        const startPosition = camera.position.clone();
+        const startTarget = controls.target.clone();
+        const targetPosition = new THREE.Vector3(position.x, position.y, position.z);
+        const targetLookAt = new THREE.Vector3(position.targetX, position.targetY, position.targetZ);
+        
+        let animationProgress = 0;
+        const animationDuration = isAutoTour ? 2000 : 1000; // Slower animation for auto-tour
+        const startTime = Date.now();
+        
+        const animateCamera = () => {
+          const elapsed = Date.now() - startTime;
+          animationProgress = Math.min(elapsed / animationDuration, 1);
+          
+          // Smooth easing function
+          const eased = 1 - Math.pow(1 - animationProgress, 3);
+          
+          // Interpolate camera position
+          camera.position.lerpVectors(startPosition, targetPosition, eased);
+          
+          // Interpolate controls target
+          controls.target.lerpVectors(startTarget, targetLookAt, eased);
+          controls.update();
+          
+          if (animationProgress < 1) {
+            requestAnimationFrame(animateCamera);
+          } else if (isAutoTour && autoTourActiveRef.current) {
+            console.log('🔄 Starting circular motion at hall');
+            
+            // Start circular camera movement around the hall for 3 seconds
+            const circularMotionDuration = 3000; // 3 seconds
+            const circularMotionStartTime = Date.now();
+            const basePosition = camera.position.clone();
+            const lookAtTarget = controls.target.clone();
+            const radius = basePosition.distanceTo(lookAtTarget);
+            
+            console.log('📍 Circular motion setup:', {
+              basePosition: basePosition,
+              lookAtTarget: lookAtTarget,
+              radius: radius
+            });
+            
+            // Calculate the initial angle
+            const direction = basePosition.clone().sub(lookAtTarget).normalize();
+            const initialAngle = Math.atan2(direction.x, direction.z);
+            
+            // Temporarily disable controls during circular motion
+            controls.enabled = false;
+            
+            const circularMotion = () => {
+              const elapsed = Date.now() - circularMotionStartTime;
+              const progress = Math.min(elapsed / circularMotionDuration, 1);
+              
+              if (progress < 1 && autoTourActiveRef.current) {
+                // Calculate circular motion angle (full circle)
+                const angle = initialAngle + (Math.PI * 2 * progress);
+                
+                // Calculate new camera position in a circle around the target
+                const newX = lookAtTarget.x + Math.sin(angle) * radius;
+                const newZ = lookAtTarget.z + Math.cos(angle) * radius;
+                
+                // Keep the same Y position (height) and update camera
+                camera.position.set(newX, basePosition.y, newZ);
+                camera.lookAt(lookAtTarget);
+                
+                // Log progress every 10%
+                if (Math.floor(progress * 10) !== Math.floor((progress - 0.1) * 10)) {
+                  console.log(`🔄 Circular motion progress: ${Math.floor(progress * 100)}%`);
+                }
+                
+                requestAnimationFrame(circularMotion);
+              } else {
+                console.log('✅ Circular motion complete');
+                
+                // Re-enable controls and restore them
+                controls.enabled = true;
+                controls.target.copy(lookAtTarget);
+                controls.update();
+                
+                // Circular motion complete, schedule next hall
+                setTimeout(() => {
+                  if (autoTourActiveRef.current) {
+                    startAutoTour();
+                  }
+                }, 100); // Small delay before moving to next hall
+              }
+            };
+            
+            circularMotion();
+          }
+        };
+        
+        animateCamera();
+      }
+    };
+    
+    // Function to start auto-tour
+    const startAutoTour = () => {
+      if (!controlsRef.current || !cameraRef.current) return;
+      
+      autoTourActiveRef.current = true;
+      const nextHall = autoTourHalls[currentAutoTourIndexRef.current];
+      
+      console.log(`🎬 Auto-tour: Moving to ${nextHall} (${currentAutoTourIndexRef.current + 1}/${autoTourHalls.length})`);
+      
+      focusCameraOnArea(nextHall, controlsRef.current, cameraRef.current, true);
+      
+      // Move to next hall (circular)
+      currentAutoTourIndexRef.current = (currentAutoTourIndexRef.current + 1) % autoTourHalls.length;
+    };
+    
+    // Function to stop auto-tour
+    const stopAutoTour = () => {
+      if (autoTourActiveRef.current) {
+        console.log('⏹️ Auto-tour stopped due to user interaction');
+        autoTourActiveRef.current = false;
+      }
+      if (autoTourTimeoutRef.current) {
+        clearTimeout(autoTourTimeoutRef.current);
+        autoTourTimeoutRef.current = null;
+      }
+      if (autoTourAnimationRef.current) {
+        cancelAnimationFrame(autoTourAnimationRef.current);
+        autoTourAnimationRef.current = null;
+      }
+    };
+    
+    // Function to handle user interaction (resets idle timer)
+    const handleUserInteraction = () => {
+      lastInteractionTimeRef.current = Date.now();
+      stopAutoTour();
+      
+      // Clear existing timeout
+      if (autoTourTimeoutRef.current) {
+        clearTimeout(autoTourTimeoutRef.current);
+      }
+      
+      // Set new timeout for auto-tour
+      autoTourTimeoutRef.current = setTimeout(() => {
+        if (Date.now() - lastInteractionTimeRef.current >= 5000) {
+          console.log('💤 User inactive for 5 seconds, starting auto-tour...');
+          startAutoTour();
+        }
+      }, 5000);
+    };
+
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;      // smoothness
     controls.enableZoom = true;         // incl. zoom
@@ -93,6 +262,10 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
     controls.maxDistance = 50;          // max. distance
     controls.enablePan = true;          // panoramic view, if necessary
     controlsRef.current = controls;     // Store controls reference
+    
+    // Add interaction listeners to controls
+    controls.addEventListener('start', handleUserInteraction); // When user starts interacting with controls
+    controls.addEventListener('change', handleUserInteraction); // When controls change
 
     // Function to map booth meshes to their data (for click handling)
     const mapBoothMeshes = () => {
@@ -331,7 +504,14 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
         
         box.getCenter(new THREE.Vector3());
         const maxDim = Math.max(size.x, size.y, size.z);
-        const scale = (10 / (maxDim || 1))* 2;
+        let scale = (10 / (maxDim || 1))* 2;
+        
+        // Make MainExhibitionHall model 1.5x larger
+        if (currentArea === 'MainExhibitionHall') {
+          scale = scale * 1.5;
+          console.log(`🏗️ Applying 1.5x scale to MainExhibitionHall model (final scale: ${scale.toFixed(3)})`);
+        }
+        
         rootModel.scale.setScalar(scale);
         rootModel.position.y = 0.01;
         scene.add(rootModel);
@@ -352,6 +532,10 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
                 createAllNameCallouts();
               }, 100);
             }
+            // Start auto-tour timer after everything is initialized
+            setTimeout(() => {
+              handleUserInteraction();
+            }, 500);
           }, 100);
         }, 200); // Increased timeout to ensure transforms are applied
       } catch (e: unknown) {
@@ -391,6 +575,7 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
 
     const onPointerMove = (e: MouseEvent, renderer: THREE.WebGLRenderer, camera: THREE.Camera) => {
       console.log("On pointer move");
+      handleUserInteraction(); // Reset idle timer on mouse movement
       setMouseFromEvent(e, renderer);
       const hits = pickInteractive(camera);
 
@@ -424,6 +609,7 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
     };
 
     const onClick = (e: MouseEvent, renderer: THREE.WebGLRenderer, camera: THREE.Camera) => {
+      handleUserInteraction(); // Reset idle timer on click
       setMouseFromEvent(e, renderer);
       const hits = pickInteractive(camera);
       
@@ -520,7 +706,9 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
 
     // Cleanup
     return () => {
-
+      // Clean up auto-tour
+      stopAutoTour();
+      
       window.removeEventListener('resize', handleResize);
       renderer.domElement.removeEventListener("mousemove", e => onPointerMove(e, renderer, camera));
       renderer.domElement.removeEventListener("click", e => onClick(e, renderer, camera));
@@ -646,7 +834,7 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
   useEffect(() => {
     if (!areaData || !cameraRef.current || !controlsRef.current) return;
 
-    // Function to focus camera on specific area within the combined model
+    // Function to focus camera on specific area within the combined model (simplified version for regular camera positioning)
     const focusCameraOnArea = (areaId: string, controls: OrbitControls, camera: THREE.Camera) => {
       const cameraPositions = {
         'Hall_B_2': { x: 7.87, y: 5.16, z: -1.22, targetX: 7.17, targetY: -0.13, targetZ: -2.26 }, // Hall B at custom position
@@ -734,31 +922,36 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
     const uniqueId = `callout-${Math.random().toString(36).substr(2, 9)}`;
     calloutDiv.className = `info-callout ${uniqueId}`;
     
+    // Check if we're in OTD TechDays 2026 Main Exhibition Hall for 3.5x larger sizing
+    const isTechDays2026 = currentArea === 'MainExhibitionHall';
+    const sizeMultiplier = isTechDays2026 ? 3.5 : 1;
+    
     calloutDiv.style.cssText = `
       background: linear-gradient(135deg, rgba(102, 170, 255, 0.95), rgba(51, 102, 204, 0.95));
       color: white;
-      padding: 1.125px 2.25px;
-      border-radius: 1.5px;
+      padding: ${1.125 * sizeMultiplier}px ${2.25 * sizeMultiplier}px;
+      border-radius: ${1.5 * sizeMultiplier}px;
       font-family: 'Segoe UI', Arial, sans-serif;
-      font-size: 1.875px;
+      font-size: ${1.875 * sizeMultiplier}px;
       text-align: center;
       pointer-events: none;
-      border: 0.5px solid #ffffff;
-      box-shadow: 0 1.125px 2.25px rgba(102,170,255,0.4), inset 0 0.5px 0 rgba(255,255,255,0.3);
-      min-width: 9px;
+      border: ${0.5 * sizeMultiplier}px solid #ffffff;
+      box-shadow: 0 ${1.125 * sizeMultiplier}px ${2.25 * sizeMultiplier}px rgba(102,170,255,0.4), inset 0 ${0.5 * sizeMultiplier}px 0 rgba(255,255,255,0.3);
+      min-width: ${9 * sizeMultiplier}px;
       z-index: 1001;
       position: relative;
       display: block !important;
       visibility: visible !important;
       opacity: 1 !important;
       white-space: nowrap;
-      text-shadow: 0 0.5px 0.5px rgba(0,0,0,0.5);
+      text-shadow: 0 ${0.5 * sizeMultiplier}px ${0.5 * sizeMultiplier}px rgba(0,0,0,0.5);
     `;
     
     
     // Check if booth has a status record (meaning it exists in Google Sheets)
     const hasStatusRecord = booth.status && booth.status !== 'nil';
     const isSoldOrReserved = booth.status && (booth.status.toLowerCase() === 'sold' || booth.status.toLowerCase() === 'reserved');
+    const isAvailable = booth.status && booth.status.toLowerCase() === 'available';
     
     if (isSoldOrReserved) {
       // Show status (Sold/Reserved) and company name for sold or reserved booths
@@ -768,24 +961,33 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
         content += `<br><br>${booth.name}`;
       }
       calloutDiv.innerHTML = `
-        <div style="font-weight: bold; margin-bottom: 0.375px; color: white; font-size: 2.25px; text-shadow: 0 0.5px 0.5px rgba(0,0,0,0.7);">${booth.id}</div>
-        <div style="font-size: 1.5px; color: rgba(255,255,255,0.9); line-height: 1.2;">
+        <div style="font-weight: bold; margin-bottom: ${0.375 * sizeMultiplier}px; color: white; font-size: ${2.25 * sizeMultiplier}px; text-shadow: 0 ${0.5 * sizeMultiplier}px ${0.5 * sizeMultiplier}px rgba(0,0,0,0.7);">${booth.id}</div>
+        <div style="font-size: ${1.5 * sizeMultiplier}px; color: rgba(255,255,255,0.9); line-height: 1.2;">
           ${content}
         </div>
       `;
-    } else if (hasStatusRecord && booth.name) {
-      // Show company name if there's a status record and it's not sold/reserved
+    } else if (isAvailable) {
+      // Show dimensions and area for available booths
       calloutDiv.innerHTML = `
-        <div style="font-weight: bold; margin-bottom: 0.375px; color: white; font-size: 2.25px; text-shadow: 0 0.5px 0.5px rgba(0,0,0,0.7);">${booth.id}</div>
-        <div style="font-size: 1.5px; color: rgba(255,255,255,0.9); line-height: 1.2;">
+        <div style="font-weight: bold; margin-bottom: ${0.375 * sizeMultiplier}px; color: white; font-size: ${2.25 * sizeMultiplier}px; text-shadow: 0 ${0.5 * sizeMultiplier}px ${0.5 * sizeMultiplier}px rgba(0,0,0,0.7);">${booth.id}</div>
+        <div style="font-size: ${1.5 * sizeMultiplier}px; color: rgba(255,255,255,0.9); line-height: 1.2;">
+          ${booth.width}m × ${booth.height}m<br><br>
+          Area: ${booth.area}m²
+        </div>
+      `;
+    } else if (hasStatusRecord && booth.name) {
+      // Show company name if there's a status record and it's not sold/reserved/available
+      calloutDiv.innerHTML = `
+        <div style="font-weight: bold; margin-bottom: ${0.375 * sizeMultiplier}px; color: white; font-size: ${2.25 * sizeMultiplier}px; text-shadow: 0 ${0.5 * sizeMultiplier}px ${0.5 * sizeMultiplier}px rgba(0,0,0,0.7);">${booth.id}</div>
+        <div style="font-size: ${1.5 * sizeMultiplier}px; color: rgba(255,255,255,0.9); line-height: 1.2;">
           ${booth.name}
         </div>
       `;
     } else {
       // Show dimensions if no status record or no company name
       calloutDiv.innerHTML = `
-        <div style="font-weight: bold; margin-bottom: 0.375px; color: white; font-size: 2.25px; text-shadow: 0 0.5px 0.5px rgba(0,0,0,0.7);">${booth.id}</div>
-        <div style="font-size: 1.5px; color: rgba(255,255,255,0.9); line-height: 1.2;">
+        <div style="font-weight: bold; margin-bottom: ${0.375 * sizeMultiplier}px; color: white; font-size: ${2.25 * sizeMultiplier}px; text-shadow: 0 ${0.5 * sizeMultiplier}px ${0.5 * sizeMultiplier}px rgba(0,0,0,0.7);">${booth.id}</div>
+        <div style="font-size: ${1.5 * sizeMultiplier}px; color: rgba(255,255,255,0.9); line-height: 1.2;">
           ${booth.width}m × ${booth.height}m<br><br>
           Area: ${booth.area}m²
         </div>
@@ -796,8 +998,13 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
     css3dObject.position.copy(position);
     // Position is already set correctly with offset in the calling function
     
-    // Scale reduced to half from 0.06
-    css3dObject.scale.setScalar(0.03); // 0.06 / 2 = 0.03
+    // Scale reduced to half from 0.06, but 4x larger for TechDays 2026
+    const baseScale = 0.03; // 0.06 / 2 = 0.03
+    css3dObject.scale.setScalar(baseScale * sizeMultiplier);
+    
+    if (isTechDays2026) {
+      console.log(`🎯 Created 3.5x larger callout for TechDays 2026 booth ${booth.id}`);
+    }
     
     return css3dObject;
   };
