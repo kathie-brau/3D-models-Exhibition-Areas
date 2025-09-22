@@ -21,7 +21,7 @@ export function useAreaData(areaId: string, hotReload: boolean = true) {
   const loadAreaDataFromSheets = async () => {
     try {
       setError(null);
-      setLoading(true);
+//      setLoading(true);
       
       const eventType = getEventType(areaId);
       console.log(`📈 Loading booth data for event: ${eventType} (requested area: ${areaId})`);
@@ -132,7 +132,7 @@ export function useAreaData(areaId: string, hotReload: boolean = true) {
     if (hotReload && process.env.NODE_ENV === 'development') {
       intervalRef.current = setInterval(async () => {
         await loadAreaDataFromSheets();
-      }, 100000);
+      }, 5000);
     }
 
     return () => {

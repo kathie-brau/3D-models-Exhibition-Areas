@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { AreaData } from './types/booth';
 import { GLTF, GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader";
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
-import { CSS3DRenderer, CSS3DObject } from 'three/examples/jsm/renderers/CSS3DRenderer';
+// CSS3D renderer no longer needed - using sprites instead
 
 interface WebGLSceneProps {
   areaData: AreaData | null;
@@ -15,11 +15,10 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
   const mountRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
-  const css3dRendererRef = useRef<CSS3DRenderer | null>(null);
-  const css3dSceneRef = useRef<THREE.Scene | null>(null);
+  // CSS3D renderer refs removed - using sprites in WebGL scene instead
   const animationRef = useRef<number | null>(null);
-  const calloutsRef = useRef<CSS3DObject[]>([]);
-  const nameCalloutsRef = useRef<CSS3DObject[]>([]); // For name callouts
+  const calloutsRef = useRef<THREE.Sprite[]>([]);
+  const nameCalloutsRef = useRef<THREE.Sprite[]>([]); // For name callouts
   const boothMeshMapRef = useRef<Map<THREE.Mesh, any>>(new Map()); // Map mesh to booth data
   const cameraRef = useRef<THREE.Camera | null>(null); // Reference to camera for billboard effect
   const controlsRef = useRef<OrbitControls | null>(null); // Reference to controls for camera positioning
@@ -29,7 +28,7 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
   const autoTourActiveRef = useRef<boolean>(false); // Track if auto-tour is active
   const currentAutoTourIndexRef = useRef<number>(0); // Current hall index in auto-tour
   const autoTourAnimationRef = useRef<number | null>(null); // Auto-tour animation frame reference
-  const autoTourStartTimeRef = useRef<number>(0); // Auto-tour animation start time
+  // const autoTourStartTimeRef = useRef<number>(0); // Auto-tour animation start time (currently unused)
 
   // Helper function to determine which model should be loaded
   const getModelPath = (areaId: string): string => {
@@ -41,7 +40,312 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
     return '/3D-models-Exhibition-Areas/models/' + areaId + '.glb';
   };
 
+  // Canvas texture generation for high-quality text rendering
+  const createTextCanvas = (config: {
+    text: string;
+    fontSize: number;
+    fontFamily: string;
+    color: string;
+    backgroundColor: string;
+    padding: number;
+    borderRadius: number;
+    borderColor?: string;
+    borderWidth?: number;
+    maxWidth?: number;
+    textAlign?: 'left' | 'center' | 'right';
+    lineHeight?: number;
+    gradient?: { colors: string[]; direction?: 'horizontal' | 'vertical' };
+    shadow?: { color: string; blur: number; offsetX: number; offsetY: number };
+  }): HTMLCanvasElement => {
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d')!;
+    const pixelRatio = window.devicePixelRatio || 1;
+    
+    // Set default values
+    const {
+      text,
+      fontSize,
+      fontFamily,
+      color,
+      backgroundColor,
+      padding,
+      borderRadius,
+      borderColor,
+      borderWidth = 0,
+      maxWidth = 400,
+      textAlign = 'center',
+      lineHeight = 1.2,
+      gradient,
+      shadow
+    } = config;
+    
+    // Configure high DPI canvas
+    const scaledFontSize = fontSize * pixelRatio;
+    const scaledPadding = padding * pixelRatio;
+    const scaledBorderWidth = borderWidth * pixelRatio;
+    
+    // Set font for measuring
+    ctx.font = `${scaledFontSize}px ${fontFamily}`;
+    
+    // Split text into lines if needed
+    const words = text.split(' ');
+    const lines: string[] = [];
+    let currentLine = words[0] || '';
+    
+    for (let i = 1; i < words.length; i++) {
+      const testLine = currentLine + ' ' + words[i];
+      const metrics = ctx.measureText(testLine);
+      
+      if (metrics.width > maxWidth * pixelRatio - scaledPadding * 2) {
+        lines.push(currentLine);
+        currentLine = words[i];
+      } else {
+        currentLine = testLine;
+      }
+    }
+    lines.push(currentLine);
+    
+    // Calculate canvas dimensions
+    let maxTextWidth = 0;
+    lines.forEach(line => {
+      const metrics = ctx.measureText(line);
+      maxTextWidth = Math.max(maxTextWidth, metrics.width);
+    });
+    
+    const textHeight = scaledFontSize * lineHeight;
+    const totalTextHeight = textHeight * lines.length;
+    
+    const canvasWidth = Math.max(maxTextWidth + scaledPadding * 2 + scaledBorderWidth * 2, 64);
+    const canvasHeight = Math.max(totalTextHeight + scaledPadding * 2 + scaledBorderWidth * 2, 32);
+    
+    // Set canvas size
+    canvas.width = canvasWidth;
+    canvas.height = canvasHeight;
+    
+    // Re-set font after canvas resize
+    ctx.font = `${scaledFontSize}px ${fontFamily}`;
+    ctx.textAlign = textAlign;
+    ctx.textBaseline = 'middle';
+    
+    // Enable anti-aliasing
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    
+    // Draw background
+    ctx.save();
+    
+    if (gradient) {
+      const gradientObj = gradient.direction === 'vertical' 
+        ? ctx.createLinearGradient(0, 0, 0, canvasHeight)
+        : ctx.createLinearGradient(0, 0, canvasWidth, 0);
+      
+      gradient.colors.forEach((color, index) => {
+        gradientObj.addColorStop(index / (gradient.colors.length - 1), color);
+      });
+      
+      ctx.fillStyle = gradientObj;
+    } else {
+      ctx.fillStyle = backgroundColor;
+    }
+    
+    // Draw rounded rectangle background
+    const radius = borderRadius * pixelRatio;
+    ctx.beginPath();
+    ctx.roundRect(scaledBorderWidth / 2, scaledBorderWidth / 2, 
+                  canvasWidth - scaledBorderWidth, canvasHeight - scaledBorderWidth, radius);
+    ctx.fill();
+    
+    // Draw border
+    if (borderColor && borderWidth > 0) {
+      ctx.strokeStyle = borderColor;
+      ctx.lineWidth = scaledBorderWidth;
+      ctx.stroke();
+    }
+    
+    ctx.restore();
+    
+    // Draw shadow if specified
+    if (shadow) {
+      ctx.save();
+      ctx.shadowColor = shadow.color;
+      ctx.shadowBlur = shadow.blur * pixelRatio;
+      ctx.shadowOffsetX = shadow.offsetX * pixelRatio;
+      ctx.shadowOffsetY = shadow.offsetY * pixelRatio;
+    }
+    
+    // Draw text
+    ctx.fillStyle = color;
+    
+    const startY = canvasHeight / 2 - (totalTextHeight / 2) + (textHeight / 2);
+    
+    lines.forEach((line, index) => {
+      const x = textAlign === 'center' ? canvasWidth / 2 : 
+               textAlign === 'right' ? canvasWidth - scaledPadding : scaledPadding;
+      const y = startY + (index * textHeight);
+      
+      ctx.fillText(line, x, y);
+    });
+    
+    if (shadow) {
+      ctx.restore();
+    }
+    
+    return canvas;
+  };
 
+  // Multi-line text canvas for callouts with different font sizes for title and content
+  const createMultiLineTextCanvas = (config: {
+    lines: string[];
+    titleFontSize: number;
+    contentFontSize: number;
+    fontFamily: string;
+    titleColor: string;
+    contentColor: string;
+    backgroundColor: string;
+    padding: number;
+    borderRadius: number;
+    borderColor?: string;
+    borderWidth?: number;
+    maxWidth?: number;
+    gradient?: { colors: string[]; direction?: 'horizontal' | 'vertical' };
+    shadow?: { color: string; blur: number; offsetX: number; offsetY: number };
+  }): HTMLCanvasElement => {
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d')!;
+    const pixelRatio = window.devicePixelRatio || 1;
+    
+    const {
+      lines,
+      titleFontSize,
+      contentFontSize,
+      fontFamily,
+      titleColor,
+      contentColor,
+      backgroundColor,
+      padding,
+      borderRadius,
+      borderColor,
+      borderWidth = 0,
+      gradient,
+      shadow
+    } = config;
+    
+    // Configure high DPI canvas
+    const scaledTitleFontSize = titleFontSize * pixelRatio;
+    const scaledContentFontSize = contentFontSize * pixelRatio;
+    const scaledPadding = padding * pixelRatio;
+    const scaledBorderWidth = borderWidth * pixelRatio;
+    
+    // Calculate text dimensions
+    let maxTextWidth = 0;
+    let totalHeight = 0;
+    const lineHeights: number[] = [];
+    const lineFontSizes: number[] = [];
+    
+    lines.forEach((line, index) => {
+      const isTitle = index === 0; // First line is title
+      const fontSize = isTitle ? scaledTitleFontSize : scaledContentFontSize;
+      const lineHeight = fontSize * 1.3;
+      
+      ctx.font = `${isTitle ? 'bold ' : ''}${fontSize}px ${fontFamily}`;
+      
+      if (line.trim() !== '') {
+        const metrics = ctx.measureText(line);
+        maxTextWidth = Math.max(maxTextWidth, metrics.width);
+        lineHeights.push(lineHeight);
+        totalHeight += lineHeight;
+      } else {
+        // Empty lines for spacing
+        lineHeights.push(lineHeight * 0.5);
+        totalHeight += lineHeight * 0.5;
+      }
+      
+      lineFontSizes.push(fontSize);
+    });
+    
+    // Canvas dimensions
+    const canvasWidth = Math.max(maxTextWidth + scaledPadding * 2 + scaledBorderWidth * 2, 64);
+    const canvasHeight = Math.max(totalHeight + scaledPadding * 2 + scaledBorderWidth * 2, 32);
+    
+    // Set canvas size
+    canvas.width = canvasWidth;
+    canvas.height = canvasHeight;
+    
+    // Enable anti-aliasing
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    
+    // Draw background
+    ctx.save();
+    
+    if (gradient) {
+      const gradientObj = gradient.direction === 'vertical' 
+        ? ctx.createLinearGradient(0, 0, 0, canvasHeight)
+        : ctx.createLinearGradient(0, 0, canvasWidth, 0);
+      
+      gradient.colors.forEach((color, index) => {
+        gradientObj.addColorStop(index / (gradient.colors.length - 1), color);
+      });
+      
+      ctx.fillStyle = gradientObj;
+    } else {
+      ctx.fillStyle = backgroundColor;
+    }
+    
+    // Draw rounded rectangle background
+    const radius = borderRadius * pixelRatio;
+    ctx.beginPath();
+    ctx.roundRect(scaledBorderWidth / 2, scaledBorderWidth / 2, 
+                  canvasWidth - scaledBorderWidth, canvasHeight - scaledBorderWidth, radius);
+    ctx.fill();
+    
+    // Draw border
+    if (borderColor && borderWidth > 0) {
+      ctx.strokeStyle = borderColor;
+      ctx.lineWidth = scaledBorderWidth;
+      ctx.stroke();
+    }
+    
+    ctx.restore();
+    
+    // Draw shadow if specified
+    if (shadow) {
+      ctx.save();
+      ctx.shadowColor = shadow.color;
+      ctx.shadowBlur = shadow.blur * pixelRatio;
+      ctx.shadowOffsetX = shadow.offsetX * pixelRatio;
+      ctx.shadowOffsetY = shadow.offsetY * pixelRatio;
+    }
+    
+    // Draw text lines
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    
+    let currentY = scaledPadding + lineHeights[0] / 2;
+    
+    lines.forEach((line, index) => {
+      if (line.trim() !== '') {
+        const isTitle = index === 0;
+        const fontSize = lineFontSizes[index];
+        
+        ctx.font = `${isTitle ? 'bold ' : ''}${fontSize}px ${fontFamily}`;
+        ctx.fillStyle = isTitle ? titleColor : contentColor;
+        
+        const x = canvasWidth / 2;
+        ctx.fillText(line, x, currentY);
+      }
+      
+      if (index < lineHeights.length - 1) {
+        currentY += lineHeights[index] / 2 + lineHeights[index + 1] / 2;
+      }
+    });
+    
+    if (shadow) {
+      ctx.restore();
+    }
+    
+    return canvas;
+  };
 
   useEffect(() => {
     if (!areaData) return;
@@ -59,9 +363,7 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
     scene.background = new THREE.Color(0x222222);
     sceneRef.current = scene;
     
-    // CSS3D Scene setup for callouts
-    const css3dScene = new THREE.Scene();
-    css3dSceneRef.current = css3dScene;
+    // CSS3D scene no longer needed - callouts now use sprites in WebGL scene
 
     // Camera setup - position to see the full 20x10m floor
     const camera = new THREE.PerspectiveCamera(75, width / height, 0.1, 2000);
@@ -76,19 +378,10 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     rendererRef.current = renderer;
 
-    // CSS3D Renderer setup for callouts
-    const css3dRenderer = new CSS3DRenderer();
-    css3dRenderer.setSize(width, height);
-    css3dRenderer.domElement.style.position = 'absolute';
-    css3dRenderer.domElement.style.top = '0';
-    css3dRenderer.domElement.style.left = '0';
-    css3dRenderer.domElement.style.pointerEvents = 'none';
-    css3dRenderer.domElement.style.zIndex = '100';
-    css3dRendererRef.current = css3dRenderer;
+    // CSS3D renderer no longer needed - callouts now use sprite system
 
     if (currentMount) {
       currentMount.appendChild(renderer.domElement);
-      currentMount.appendChild(css3dRenderer.domElement);
     }
 
     // Auto-tour hall sequence (circular)
@@ -97,10 +390,11 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
     // Function to focus camera on specific area within the combined model
     const focusCameraOnArea = (areaId: string, controls: OrbitControls, camera: THREE.Camera, isAutoTour: boolean = false) => {
       const cameraPositions = {
-        'Hall_B_2': { x: 7.87, y: 5.16, z: -1.22, targetX: 7.17, targetY: -0.13, targetZ: -2.26 }, // Hall B at custom position
-        'Hall_C': { x: 0, y: 3.75, z: 2, targetX: 0, targetY: 0, targetZ: 0 },     // Hall C at X=0 (4x zoom: 15/4=3.75, 8/4=2)
-        'Hall_E_3': { x: -4.05, y: 4.56, z: -0.8, targetX: -4.74, targetY: 0.56, targetZ: -2.06 }, // Hall E at X=-5 (4x zoom: 15/4=3.75, 8/4=2)
-        'all_in_one': { x: 0, y: 6.25, z: 3.75, targetX: 0, targetY: 0, targetZ: 0 } // Full overview (4x zoom: 25/4=6.25, 15/4=3.75)
+        'Hall_B_2': { x: 7.55, y: 3.51, z: -0.48, targetX: 6.62, targetY: -0.15, targetZ: -1.81 }, // Hall B at custom position
+        'Hall_C': { x: 0, y: 3.05, z: 1.63, targetX: 0, targetY: 0, targetZ: 0 },     // Hall C at X=0 (4x zoom: 15/4=3.75, 8/4=2)
+        'Hall_E_3': { x: -3.58, y: 3.06, z: -0.68, targetX: -4.20, targetY: 0.40, targetZ: -1.85 }, // Hall E at X=-5 (4x zoom: 15/4=3.75, 8/4=2)
+        'all_in_one': { x: 0, y: 6.25, z: 3.75, targetX: 0, targetY: 0, targetZ: 0 }, // Full overview (4x zoom: 25/4=6.25, 15/4=3.75)
+        'MainExhibitionHall': { x: 0.00, y: 9.45, z: 5.04, targetX: 0.00, targetY: 0.00, targetZ: 0.00 } // OTD TechDays 2026 Main Exhibition Hall
       };
       
       const position = cameraPositions[areaId as keyof typeof cameraPositions];
@@ -355,8 +649,8 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
     const showBoothInfoCallout = (booth: any, mesh: THREE.Mesh) => {
       console.log(`📝 showBoothInfoCallout called for booth:`, booth);
       
-      if (!css3dScene) {
-        console.error('❌ css3dScene not available');
+      if (!scene) {
+        console.error('❌ scene not available');
         return;
       }
       
@@ -376,10 +670,10 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
       const infoCalloutPosition = center.clone();
       infoCalloutPosition.y += 1.2; // Higher position for info callouts
       const infoCallout = createBoothCallout(booth, infoCalloutPosition);
-      css3dScene.add(infoCallout);
+      scene.add(infoCallout);
       calloutsRef.current.push(infoCallout);
       
-      console.log(`✅ Info callout created and added for booth ${booth.id}`);
+      console.log(`✅ Info callout sprite created and added for booth ${booth.id}`);
     };
 
 
@@ -645,20 +939,10 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
     // Initial camera positioning will be handled by the separate useEffect
 
 
-    // Function to update callout orientations to face camera
+    // Sprite callouts automatically face camera - no manual orientation needed
     const updateCalloutOrientations = () => {
-      if (!cameraRef.current) return;
-      
-      // Update info callouts to face camera
-      calloutsRef.current.forEach(callout => {
-        callout.lookAt(cameraRef.current!.position);
-      });
-      
-      // Update name callouts to face camera
-      nameCalloutsRef.current.forEach(callout => {
-        callout.lookAt(cameraRef.current!.position);
-      });
-      
+      // Sprites automatically face camera - this function is now simplified
+      // Keep it for potential future billboard adjustments if needed
     };
 
     // Animation loop
@@ -678,15 +962,11 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
         lastLogTime = now;
       }
       
-      // Update callout orientations to face camera
+      // Update callout orientations (sprites auto-face camera)
       updateCalloutOrientations();
       
-      // Ensure CSS3D renderer uses the same camera matrix as WebGL renderer
-      camera.updateMatrixWorld();
-      
-      // Render both WebGL and CSS3D scenes with synchronized camera
+      // Render WebGL scene with sprites
       renderer.render(scene, camera);
-      css3dRenderer.render(css3dScene, camera);
     };
 
     animate();
@@ -699,7 +979,6 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
       camera.aspect = newWidth / newHeight;
       camera.updateProjectionMatrix();
       renderer.setSize(newWidth, newHeight);
-      css3dRenderer.setSize(newWidth, newHeight);
     };
 
     window.addEventListener('resize', handleResize);
@@ -719,9 +998,6 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
 
       if (currentMount && renderer.domElement) {
         currentMount.removeChild(renderer.domElement);
-      }
-      if (currentMount && css3dRenderer.domElement) {
-        currentMount.removeChild(css3dRenderer.domElement);
       }
 
       renderer.dispose();
@@ -837,10 +1113,11 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
     // Function to focus camera on specific area within the combined model (simplified version for regular camera positioning)
     const focusCameraOnArea = (areaId: string, controls: OrbitControls, camera: THREE.Camera) => {
       const cameraPositions = {
-        'Hall_B_2': { x: 7.87, y: 5.16, z: -1.22, targetX: 7.17, targetY: -0.13, targetZ: -2.26 }, // Hall B at custom position
-        'Hall_C': { x: 0, y: 3.75, z: 2, targetX: 0, targetY: 0, targetZ: 0 },     // Hall C at X=0 (4x zoom: 15/4=3.75, 8/4=2)
-        'Hall_E_3': { x: -4.05, y: 4.56, z: -0.8, targetX: -4.74, targetY: 0.56, targetZ: -2.06 }, // Hall E at X=-5 (4x zoom: 15/4=3.75, 8/4=2)
-        'all_in_one': { x: 0, y: 6.25, z: 3.75, targetX: 0, targetY: 0, targetZ: 0 } // Full overview (4x zoom: 25/4=6.25, 15/4=3.75)
+        'Hall_B_2': { x: 7.55, y: 3.51, z: -0.48, targetX: 6.62, targetY: -0.15, targetZ: -1.81 }, // Hall B at custom position
+        'Hall_C': { x: 0, y: 3.05, z: 1.63, targetX: 0, targetY: 0, targetZ: 0 },     // Hall C at X=0 (4x zoom: 15/4=3.75, 8/4=2)
+        'Hall_E_3': { x: -3.58, y: 3.06, z: -0.68, targetX: -4.20, targetY: 0.40, targetZ: -1.85 }, // Hall E at X=-5 (4x zoom: 15/4=3.75, 8/4=2)
+        'all_in_one': { x: 0, y: 6.25, z: 3.75, targetX: 0, targetY: 0, targetZ: 0 }, // Full overview (4x zoom: 25/4=6.25, 15/4=3.75)
+        'MainExhibitionHall': { x: 0.00, y: 9.45, z: 5.04, targetX: 0.00, targetY: 0.00, targetZ: 0.00 } // OTD TechDays 2026 Main Exhibition Hall
       };
       
       const position = cameraPositions[areaId as keyof typeof cameraPositions];
@@ -915,161 +1192,188 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [areaData?.booths]); // React to booth data changes
 
-  // Function to create a booth callout (ID, dimensions, area) - Now larger and higher
-  const createBoothCallout = (booth: any, position: THREE.Vector3): CSS3DObject => {
-    const calloutDiv = document.createElement('div');
-    // Add unique class for CSS targeting
-    const uniqueId = `callout-${Math.random().toString(36).substr(2, 9)}`;
-    calloutDiv.className = `info-callout ${uniqueId}`;
-    
+  // Function to create a booth callout sprite with canvas texture
+  const createBoothCallout = (booth: any, position: THREE.Vector3): THREE.Sprite => {
     // Check if we're in OTD TechDays 2026 Main Exhibition Hall for 3.5x larger sizing
     const isTechDays2026 = currentArea === 'MainExhibitionHall';
     const sizeMultiplier = isTechDays2026 ? 3.5 : 1;
     
-    calloutDiv.style.cssText = `
-      background: linear-gradient(135deg, rgba(102, 170, 255, 0.95), rgba(51, 102, 204, 0.95));
-      color: white;
-      padding: ${1.125 * sizeMultiplier}px ${2.25 * sizeMultiplier}px;
-      border-radius: ${1.5 * sizeMultiplier}px;
-      font-family: 'Segoe UI', Arial, sans-serif;
-      font-size: ${1.875 * sizeMultiplier}px;
-      text-align: center;
-      pointer-events: none;
-      border: ${0.5 * sizeMultiplier}px solid #ffffff;
-      box-shadow: 0 ${1.125 * sizeMultiplier}px ${2.25 * sizeMultiplier}px rgba(102,170,255,0.4), inset 0 ${0.5 * sizeMultiplier}px 0 rgba(255,255,255,0.3);
-      min-width: ${9 * sizeMultiplier}px;
-      z-index: 1001;
-      position: relative;
-      display: block !important;
-      visibility: visible !important;
-      opacity: 1 !important;
-      white-space: nowrap;
-      text-shadow: 0 ${0.5 * sizeMultiplier}px ${0.5 * sizeMultiplier}px rgba(0,0,0,0.5);
-    `;
-    
-    
-    // Check if booth has a status record (meaning it exists in Google Sheets)
+    // Determine content based on booth status
     const hasStatusRecord = booth.status && booth.status !== 'nil';
     const isSoldOrReserved = booth.status && (booth.status.toLowerCase() === 'sold' || booth.status.toLowerCase() === 'reserved');
     const isAvailable = booth.status && booth.status.toLowerCase() === 'available';
     
+    // Format text exactly like the original CSS3D version
+    let formattedText = '';
+    
     if (isSoldOrReserved) {
       // Show status (Sold/Reserved) and company name for sold or reserved booths
       const statusText = booth.status.charAt(0).toUpperCase() + booth.status.slice(1).toLowerCase();
-      let content = statusText;
+      formattedText = booth.id; // First line: booth ID (bold)
       if (booth.name && booth.name.trim() !== '') {
-        content += `<br><br>${booth.name}`;
+        formattedText += `\n\n${statusText}\n\n${booth.name}`; // Status and company name
+      } else {
+        formattedText += `\n\n${statusText}`; // Just status
       }
-      calloutDiv.innerHTML = `
-        <div style="font-weight: bold; margin-bottom: ${0.375 * sizeMultiplier}px; color: white; font-size: ${2.25 * sizeMultiplier}px; text-shadow: 0 ${0.5 * sizeMultiplier}px ${0.5 * sizeMultiplier}px rgba(0,0,0,0.7);">${booth.id}</div>
-        <div style="font-size: ${1.5 * sizeMultiplier}px; color: rgba(255,255,255,0.9); line-height: 1.2;">
-          ${content}
-        </div>
-      `;
     } else if (isAvailable) {
-      // Show dimensions and area for available booths
-      calloutDiv.innerHTML = `
-        <div style="font-weight: bold; margin-bottom: ${0.375 * sizeMultiplier}px; color: white; font-size: ${2.25 * sizeMultiplier}px; text-shadow: 0 ${0.5 * sizeMultiplier}px ${0.5 * sizeMultiplier}px rgba(0,0,0,0.7);">${booth.id}</div>
-        <div style="font-size: ${1.5 * sizeMultiplier}px; color: rgba(255,255,255,0.9); line-height: 1.2;">
-          ${booth.width}m × ${booth.height}m<br><br>
-          Area: ${booth.area}m²
-        </div>
-      `;
+      // Show dimensions and area for available booths - THREE LINES
+      formattedText = `${booth.id}\n\n${booth.width}m × ${booth.height}m\n\nArea: ${booth.area}m²`;
     } else if (hasStatusRecord && booth.name) {
       // Show company name if there's a status record and it's not sold/reserved/available
-      calloutDiv.innerHTML = `
-        <div style="font-weight: bold; margin-bottom: ${0.375 * sizeMultiplier}px; color: white; font-size: ${2.25 * sizeMultiplier}px; text-shadow: 0 ${0.5 * sizeMultiplier}px ${0.5 * sizeMultiplier}px rgba(0,0,0,0.7);">${booth.id}</div>
-        <div style="font-size: ${1.5 * sizeMultiplier}px; color: rgba(255,255,255,0.9); line-height: 1.2;">
-          ${booth.name}
-        </div>
-      `;
+      formattedText = `${booth.id}\n\n${booth.name}`;
     } else {
-      // Show dimensions if no status record or no company name
-      calloutDiv.innerHTML = `
-        <div style="font-weight: bold; margin-bottom: ${0.375 * sizeMultiplier}px; color: white; font-size: ${2.25 * sizeMultiplier}px; text-shadow: 0 ${0.5 * sizeMultiplier}px ${0.5 * sizeMultiplier}px rgba(0,0,0,0.7);">${booth.id}</div>
-        <div style="font-size: ${1.5 * sizeMultiplier}px; color: rgba(255,255,255,0.9); line-height: 1.2;">
-          ${booth.width}m × ${booth.height}m<br><br>
-          Area: ${booth.area}m²
-        </div>
-      `;
+      // Show dimensions if no status record or no company name - THREE LINES
+      formattedText = `${booth.id}\n\n${booth.width}m × ${booth.height}m\n\nArea: ${booth.area}m²`;
     }
     
-    const css3dObject = new CSS3DObject(calloutDiv);
-    css3dObject.position.copy(position);
-    // Position is already set correctly with offset in the calling function
+    // Create canvas texture with proper multi-line rendering
+    const canvas = createMultiLineTextCanvas({
+      lines: formattedText.split('\n'),
+      titleFontSize: 22 * sizeMultiplier, // Larger font for booth ID
+      contentFontSize: 18 * sizeMultiplier, // Smaller font for content
+      fontFamily: '-apple-system, BlinkMacSystemFont, Segoe UI, Helvetica, Arial, sans-serif',
+      titleColor: 'white',
+      contentColor: 'rgba(255,255,255,0.9)',
+      backgroundColor: 'transparent',
+      padding: 12 * sizeMultiplier,
+      borderRadius: 8 * sizeMultiplier,
+      borderColor: '#ffffff',
+      borderWidth: 1 * sizeMultiplier,
+      maxWidth: 200 * sizeMultiplier,
+      gradient: {
+        colors: ['rgba(102, 170, 255, 0.95)', 'rgba(51, 102, 204, 0.95)'],
+        direction: 'vertical'
+      },
+      shadow: {
+        color: 'rgba(102, 170, 255, 0.4)',
+        blur: 8 * sizeMultiplier,
+        offsetX: 0,
+        offsetY: 4 * sizeMultiplier
+      }
+    });
     
-    // Scale reduced to half from 0.06, but 4x larger for TechDays 2026
-    const baseScale = 0.03; // 0.06 / 2 = 0.03
-    css3dObject.scale.setScalar(baseScale * sizeMultiplier);
+    // Create texture from canvas
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.needsUpdate = true;
+    
+    // Create sprite material
+    const material = new THREE.SpriteMaterial({
+      map: texture,
+      transparent: true,
+      alphaTest: 0.1,
+      sizeAttenuation: true
+    });
+    
+    // Create sprite
+    const sprite = new THREE.Sprite(material);
+    sprite.position.copy(position);
+    
+    // Scale the sprite appropriately - reduced by half
+    // Adjust scale based on canvas aspect ratio to maintain proper proportions
+    const baseScale = 0.4 * sizeMultiplier; // Reduced from 0.8 to 0.4 (50% smaller)
+    const aspectRatio = canvas.height / canvas.width;
+    sprite.scale.set(baseScale, baseScale * aspectRatio, 1);
+    
+    // Store booth data for reference
+    sprite.userData.booth = booth;
+    sprite.userData.isTechDays2026 = isTechDays2026;
     
     if (isTechDays2026) {
-      console.log(`🎯 Created 3.5x larger callout for TechDays 2026 booth ${booth.id}`);
+      console.log(`🎯 Created 3.5x larger sprite callout for TechDays 2026 booth ${booth.id}`);
     }
     
-    return css3dObject;
+    return sprite;
   };
 
-  // Function to create a booth name callout - Now smaller and closer
-  const createBoothNameCallout = (booth: any, position: THREE.Vector3): CSS3DObject => {
-    const calloutDiv = document.createElement('div');
-    // Add unique class for CSS targeting
-    const uniqueId = `callout-${Math.random().toString(36).substr(2, 9)}`;
-    calloutDiv.className = `name-callout ${uniqueId}`;
+  // Function to create a booth name callout sprite
+  const createBoothNameCallout = (booth: any, position: THREE.Vector3): THREE.Sprite => {
+    // Check if we're in MainExhibitionHall for larger name callouts
+    const isMainExhibitionHall = currentArea === 'MainExhibitionHall';
+    const spriteSizeMultiplier = isMainExhibitionHall ? 2 : 1;
     
-    calloutDiv.style.cssText = `
-      background: rgba(0, 0, 0, 0.9);
-      color: white;
-      padding: 0.5px 1.5px;
-      border-radius: 1px;
-      font-family: 'Segoe UI', Arial, sans-serif;
-      font-size: 3px;
-      text-align: center;
-      pointer-events: none;
-      border: 0.5px solid #66aaff;
-      box-shadow: 0 0.5px 1.5px rgba(0,0,0,0.5);
-      min-width: 9px;
-      z-index: 1000;
-      position: relative;
-      display: block !important;
-      visibility: visible !important;
-      opacity: 1 !important;
-      white-space: nowrap;
-    `;
+    // For names longer than 10 characters, enable multi-line wrapping
+    const shouldWrap = booth.name.length > 10;
+    const displayName = booth.name; // Don't truncate, let it wrap instead
     
+    // Create canvas texture for name callout with flexible width
+    const canvas = createTextCanvas({
+      text: displayName,
+      fontSize: 16.8, // 20% larger than 14px (14 * 1.2 = 16.8)
+      fontFamily: '-apple-system, BlinkMacSystemFont, Segoe UI, Helvetica, Arial, sans-serif',
+      color: '#66aaff',
+      backgroundColor: 'rgba(0, 0, 0, 0.9)',
+      padding: 4,
+      borderRadius: 2,
+      borderColor: '#66aaff',
+      borderWidth: 0.5,
+      maxWidth: shouldWrap ? 80 : 200, // Narrower width for wrapping, wider for single line
+      textAlign: 'center',
+      lineHeight: 1.3 // Slightly more spacing for multi-line text
+    });
     
-    // Truncate long names for better display
-    const displayName = booth.name.length > 18 ? booth.name.substring(0, 18) + '...' : booth.name;
+    // Create texture from canvas
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.needsUpdate = true;
     
-    calloutDiv.innerHTML = `
-      <div style="font-weight: bold; color: #66aaff; font-size: 3px;">${displayName}</div>
-    `;
+    // Create sprite material
+    const material = new THREE.SpriteMaterial({
+      map: texture,
+      transparent: true,
+      alphaTest: 0.1,
+      sizeAttenuation: true
+    });
     
-    const css3dObject = new CSS3DObject(calloutDiv);
-    css3dObject.position.copy(position);
-    // Position is already set correctly with offset in the calling function
+    // Create sprite
+    const sprite = new THREE.Sprite(material);
+    sprite.position.copy(position);
     
-    // Scale adjusted for name callouts when show exhibitor details is enabled - made 2x bigger
-    css3dObject.scale.setScalar(0.05 / 3); // 3x smaller scale for name callouts (made 2x bigger from previous 6x)
+    // Scale the sprite - larger for MainExhibitionHall but font size stays same
+    // Maintain proper aspect ratio for text readability
+    const baseScale = 0.25 * spriteSizeMultiplier; // 2x larger sprite for MainExhibitionHall
+    const aspectRatio = canvas.height / canvas.width;
+    sprite.scale.set(baseScale, baseScale * aspectRatio, 1);
     
-    return css3dObject;
+    // Store booth data for reference
+    sprite.userData.booth = booth;
+    sprite.userData.isNameCallout = true;
+    sprite.userData.isMainExhibitionHall = isMainExhibitionHall;
+    
+    if (isMainExhibitionHall) {
+      console.log(`🏢 Created 2x larger name callout for MainExhibitionHall booth ${booth.id}: ${booth.name} (${shouldWrap ? 'multi-line' : 'single-line'})`);
+    }
+    
+    return sprite;
   };
   
-  // Function to clear existing callouts and their tails
+  // Function to clear existing callouts
   const clearCallouts = () => {
-    if (css3dSceneRef.current) {
+    if (sceneRef.current) {
       calloutsRef.current.forEach(callout => {
-        css3dSceneRef.current?.remove(callout);
+        sceneRef.current?.remove(callout);
+        // Dispose of texture and material to prevent memory leaks
+        if (callout.material && callout.material.map) {
+          callout.material.map.dispose();
+        }
+        if (callout.material) {
+          callout.material.dispose();
+        }
       });
       calloutsRef.current = [];
-      
     }
   };
 
   // Function to clear existing name callouts
   const clearNameCallouts = () => {
-    if (css3dSceneRef.current) {
+    if (sceneRef.current) {
       nameCalloutsRef.current.forEach(callout => {
-        css3dSceneRef.current?.remove(callout);
+        sceneRef.current?.remove(callout);
+        // Dispose of texture and material to prevent memory leaks
+        if (callout.material && callout.material.map) {
+          callout.material.map.dispose();
+        }
+        if (callout.material) {
+          callout.material.dispose();
+        }
       });
       nameCalloutsRef.current = [];
     }
@@ -1161,7 +1465,7 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
 
   // Function to create name callouts for all booths with names
   const createAllNameCallouts = () => {
-    if (!areaData || !css3dSceneRef.current) return;
+    if (!areaData || !sceneRef.current) return;
 
     console.log(`🏢 Creating name callouts for ${areaData.areaName}`);
     
@@ -1183,7 +1487,7 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
         const nameCalloutPosition = center.clone();
         nameCalloutPosition.y += 0.4; // Closer position for name callouts
         const nameCallout = createBoothNameCallout(booth, nameCalloutPosition);
-        css3dSceneRef.current?.add(nameCallout);
+        sceneRef.current?.add(nameCallout);
         nameCalloutsRef.current.push(nameCallout);
         
         console.log(`    Added name callout for ${booth.id}: ${booth.name}`);
