@@ -32,12 +32,24 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
 
   // Helper function to determine which model should be loaded
   const getModelPath = (areaId: string): string => {
-    // All energy areas use the combined model
-    if (areaId === 'Hall_B_2' || areaId === 'Hall_C' || areaId === 'Hall_E_3' || areaId === 'all_in_one') {
-      return '/3D-models-Exhibition-Areas/models/all_in_one.glb';
+    // Use process.env.PUBLIC_URL to handle both development and production paths
+    const basePath = process.env.PUBLIC_URL || '';
+    
+    // Each hall loads its own individual model
+    switch (areaId) {
+      case 'Hall_B_2':
+        return `${basePath}/models/Hall_B_2.glb`;
+      case 'Hall_C':
+        return `${basePath}/models/Hall_C.glb`;
+      case 'Hall_E_3':
+        return `${basePath}/models/Hall_E_3.glb`;
+      case 'all_in_one':
+        return `${basePath}/models/all_in_one.glb`;
+      case 'MainExhibitionHall':
+        return `${basePath}/models/MainExhibitionHall.glb`;
+      default:
+        return `${basePath}/models/${areaId}.glb`;
     }
-    // Other areas use their individual models
-    return '/3D-models-Exhibition-Areas/models/' + areaId + '.glb';
   };
 
   // Canvas texture generation for high-quality text rendering
@@ -347,6 +359,167 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
     return canvas;
   };
 
+  // Custom canvas for booth callouts with area highlight
+  const createBoothCalloutCanvas = (config: {
+    boothId: string;
+    area: string;
+    dimensions: string;
+    titleFontSize: number;
+    contentFontSize: number;
+    fontFamily: string;
+    titleColor: string;
+    contentColor: string;
+    areaBoxColor: string;
+    backgroundColor: string;
+    padding: number;
+    borderRadius: number;
+    borderColor?: string;
+    borderWidth?: number;
+    maxWidth?: number;
+    gradient?: { colors: string[]; direction?: 'horizontal' | 'vertical' };
+    shadow?: { color: string; blur: number; offsetX: number; offsetY: number };
+  }): HTMLCanvasElement => {
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d')!;
+    const pixelRatio = window.devicePixelRatio || 1;
+    
+    const {
+      boothId,
+      area,
+      dimensions,
+      titleFontSize,
+      contentFontSize,
+      fontFamily,
+      titleColor,
+      contentColor,
+      areaBoxColor,
+      backgroundColor,
+      padding,
+      borderRadius,
+      borderColor,
+      borderWidth = 0,
+      gradient,
+      shadow
+    } = config;
+    
+    // Configure high DPI canvas
+    const scaledTitleFontSize = titleFontSize * pixelRatio;
+    const scaledContentFontSize = contentFontSize * pixelRatio;
+    const scaledPadding = padding * pixelRatio;
+    const scaledBorderWidth = borderWidth * pixelRatio;
+    
+    // Measure text dimensions
+    ctx.font = `bold ${scaledTitleFontSize}px ${fontFamily}`;
+    const titleMetrics = ctx.measureText(boothId);
+    const titleWidth = titleMetrics.width;
+    const titleHeight = scaledTitleFontSize * 1.3;
+    
+    ctx.font = `${scaledContentFontSize}px ${fontFamily}`;
+    const areaMetrics = ctx.measureText(area);
+    const dimensionsMetrics = ctx.measureText(dimensions);
+    
+    const areaWidth = areaMetrics.width;
+    const dimensionsWidth = dimensionsMetrics.width;
+    const contentHeight = scaledContentFontSize * 1.3;
+    
+    // Calculate layout
+    const spacing = scaledPadding * 0.5;
+    const areaBoxPadding = scaledPadding * 0.3;
+    const maxTextWidth = Math.max(titleWidth, areaWidth + spacing + dimensionsWidth + areaBoxPadding * 2);
+    
+    // Canvas dimensions
+    const canvasWidth = Math.max(maxTextWidth + scaledPadding * 2 + scaledBorderWidth * 2, 64);
+    const canvasHeight = Math.max(titleHeight + contentHeight + spacing + scaledPadding * 2 + scaledBorderWidth * 2, 32);
+    
+    // Set canvas size
+    canvas.width = canvasWidth;
+    canvas.height = canvasHeight;
+    
+    // Enable anti-aliasing
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    
+    // Draw background
+    ctx.save();
+    
+    if (gradient) {
+      const gradientObj = gradient.direction === 'vertical' 
+        ? ctx.createLinearGradient(0, 0, 0, canvasHeight)
+        : ctx.createLinearGradient(0, 0, canvasWidth, 0);
+      
+      gradient.colors.forEach((color, index) => {
+        gradientObj.addColorStop(index / (gradient.colors.length - 1), color);
+      });
+      
+      ctx.fillStyle = gradientObj;
+    } else {
+      ctx.fillStyle = backgroundColor;
+    }
+    
+    // Draw rounded rectangle background
+    const radius = borderRadius * pixelRatio;
+    ctx.beginPath();
+    ctx.roundRect(scaledBorderWidth / 2, scaledBorderWidth / 2, 
+                  canvasWidth - scaledBorderWidth, canvasHeight - scaledBorderWidth, radius);
+    ctx.fill();
+    
+    // Draw border
+    if (borderColor && borderWidth > 0) {
+      ctx.strokeStyle = borderColor;
+      ctx.lineWidth = scaledBorderWidth;
+      ctx.stroke();
+    }
+    
+    ctx.restore();
+    
+    // Draw shadow if specified
+    if (shadow) {
+      ctx.save();
+      ctx.shadowColor = shadow.color;
+      ctx.shadowBlur = shadow.blur * pixelRatio;
+      ctx.shadowOffsetX = shadow.offsetX * pixelRatio;
+      ctx.shadowOffsetY = shadow.offsetY * pixelRatio;
+    }
+    
+    // Draw booth ID (title)
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = `bold ${scaledTitleFontSize}px ${fontFamily}`;
+    ctx.fillStyle = titleColor;
+    
+    const titleY = scaledPadding + titleHeight / 2;
+    ctx.fillText(boothId, canvasWidth / 2, titleY);
+    
+    // Calculate second row layout
+    const secondRowY = titleY + titleHeight / 2 + spacing + contentHeight / 2;
+    
+    // Draw area in lighter box
+    const areaBoxWidth = areaWidth + areaBoxPadding * 2;
+    const areaBoxHeight = contentHeight + areaBoxPadding;
+    const areaBoxX = canvasWidth / 2 - (areaBoxWidth + spacing + dimensionsWidth) / 2;
+    const areaBoxY = secondRowY - areaBoxHeight / 2;
+    
+    ctx.fillStyle = areaBoxColor;
+    ctx.beginPath();
+    ctx.roundRect(areaBoxX, areaBoxY, areaBoxWidth, areaBoxHeight, radius * 0.5);
+    ctx.fill();
+    
+    // Draw area text
+    ctx.font = `${scaledContentFontSize}px ${fontFamily}`;
+    ctx.fillStyle = contentColor;
+    ctx.fillText(area, areaBoxX + areaBoxWidth / 2, secondRowY);
+    
+    // Draw dimensions text
+    const dimensionsX = areaBoxX + areaBoxWidth + spacing + dimensionsWidth / 2;
+    ctx.fillText(dimensions, dimensionsX, secondRowY);
+    
+    if (shadow) {
+      ctx.restore();
+    }
+    
+    return canvas;
+  };
+
   useEffect(() => {
     if (!areaData) return;
     
@@ -360,7 +533,7 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
 
     // WebGL Scene setup
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x222222);
+    scene.background = new THREE.Color(0xffffff); // White background
     sceneRef.current = scene;
     
     // CSS3D scene no longer needed - callouts now use sprites in WebGL scene
@@ -389,11 +562,17 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
     
     // Function to focus camera on specific area within the combined model
     const focusCameraOnArea = (areaId: string, controls: OrbitControls, camera: THREE.Camera, isAutoTour: boolean = false) => {
+      // Skip camera positioning for individual halls unless it's auto-tour
+      if (!isAutoTour && (areaId === 'Hall_B_2' || areaId === 'Hall_C' || areaId === 'Hall_E_3')) {
+        console.log(`📹 Skipping camera positioning for individual hall: ${areaId} (not auto-tour)`);
+        return;
+      }
+      
       const cameraPositions = {
-        'Hall_B_2': { x: 7.55, y: 3.51, z: -0.48, targetX: 6.62, targetY: -0.15, targetZ: -1.81 }, // Hall B at custom position
-        'Hall_C': { x: 0, y: 3.05, z: 1.63, targetX: 0, targetY: 0, targetZ: 0 },     // Hall C at X=0 (4x zoom: 15/4=3.75, 8/4=2)
-        'Hall_E_3': { x: -3.58, y: 3.06, z: -0.68, targetX: -4.20, targetY: 0.40, targetZ: -1.85 }, // Hall E at X=-5 (4x zoom: 15/4=3.75, 8/4=2)
-        'all_in_one': { x: 0, y: 6.25, z: 3.75, targetX: 0, targetY: 0, targetZ: 0 }, // Full overview (4x zoom: 25/4=6.25, 15/4=3.75)
+        'Hall_B_2': { x: 7.55, y: 3.51, z: -0.48, targetX: 6.62, targetY: -0.15, targetZ: -1.81 }, // Hall B at custom position (auto-tour only)
+        'Hall_C': { x: -2.05, y: 7.87, z: 5.73, targetX: -0.27, targetY: -0.41, targetZ: 0.4 },     // Hall C at custom position (auto-tour only)
+        'Hall_E_3': { x: -3.58, y: 3.06, z: -0.68, targetX: -4.20, targetY: 0.40, targetZ: -1.85 }, // Hall E at X=-5 (auto-tour only)
+        'all_in_one': { x: 0, y: 6.25, z: 3.75, targetX: 0, targetY: 0, targetZ: 0 }, // Full overview
         'MainExhibitionHall': { x: 0.00, y: 9.45, z: 5.04, targetX: 0.00, targetY: 0.00, targetZ: 0.00 } // OTD TechDays 2026 Main Exhibition Hall
       };
       
@@ -880,23 +1059,51 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
           if (hovered && hovered.material && hovered.userData._hoverColor !== undefined) {
             const mat = Array.isArray(hovered.material) ? hovered.material[0] : hovered.material;
             (mat as THREE.MeshStandardMaterial).color.setHex(hovered.userData._hoverColor);
+            // Reset emissive for glow effect
+            (mat as THREE.MeshStandardMaterial).emissive.setHex(0x000000);
           }
-          // save and highlight in yellow
+          
+          // Get the booth's status to determine glow color
+          const boothData = boothMeshMapRef.current.get(m);
+          const status = boothData?.status?.toLowerCase() || 'available';
+          
+          // Determine glow color based on status
+          let glowColor: number;
+          if (status === 'sold' || status === 'reserved') {
+            glowColor = 0x0430A9; // Blue glow for sold/reserved
+          } else {
+            // For available booths, use the new green color
+            glowColor = 0x659C3E; // Green glow for available
+          }
+          
+          // save current color and apply glow effect
           const mat = Array.isArray(m.material) ? m.material[0] : m.material;
           if ((mat as THREE.MeshStandardMaterial)?.color) {
             m.userData._hoverColor = (mat as THREE.MeshStandardMaterial).color.getHex();
             // Clone to avoid affecting shared materials
             if (!Array.isArray(m.material)) m.material = mat.clone();
-            ((Array.isArray(m.material) ? m.material[0] : m.material) as THREE.MeshStandardMaterial)
-              .color.set("#ffff00");
+            
+            const materialToUpdate = (Array.isArray(m.material) ? m.material[0] : m.material) as THREE.MeshStandardMaterial;
+            
+            // Create glowing effect with emissive color (30% intensity)
+            materialToUpdate.emissive.setHex(glowColor);
+            materialToUpdate.emissiveIntensity = 0.3;
+            
+            // Slightly brighten the base color for additional glow
+            const brighterColor = new THREE.Color(glowColor).multiplyScalar(1.5);
+            materialToUpdate.color.copy(brighterColor);
           }
           hovered = m;
         }
       } else {
-        // Turn off the backlight
+        // Turn off the glow effect
         if (hovered && hovered.material && hovered.userData._hoverColor !== undefined) {
           const mat = Array.isArray(hovered.material) ? hovered.material[0] : hovered.material;
+          // Restore original color
           (mat as THREE.MeshStandardMaterial).color.setHex(hovered.userData._hoverColor);
+          // Remove glow effect
+          (mat as THREE.MeshStandardMaterial).emissive.setHex(0x000000);
+          (mat as THREE.MeshStandardMaterial).emissiveIntensity = 0;
         }
         hovered = null;
       }
@@ -930,8 +1137,22 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
     // Load the appropriate model based on current area
     const modelPath = getModelPath(currentArea);
     
-    // For now, always load the model to ensure it displays properly
+    // Debug model loading
     console.log(`🏗️ Loading model: ${modelPath} for area: ${currentArea}`);
+    console.log(`📁 PUBLIC_URL: ${process.env.PUBLIC_URL || 'undefined'}`);
+    console.log(`🌐 Full model URL will be: ${window.location.origin}${modelPath}`);
+    
+    // Check if file exists by making a HEAD request
+    fetch(modelPath, { method: 'HEAD' })
+      .then(response => {
+        console.log(`📦 Model file status: ${response.status} - ${response.ok ? 'OK' : 'NOT FOUND'}`);
+        if (!response.ok) {
+          console.error(`❌ Model file not found at: ${modelPath}`);
+        }
+      })
+      .catch(error => {
+        console.error(`❌ Error checking model file: ${error.message}`);
+      });
     console.log(`🌍 Will show ${areaData.booths.length} booths on this model`);
     currentModelRef.current = modelPath;
     initModel(modelPath);
@@ -1004,7 +1225,7 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
       controls.dispose();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [areaData]); // React to areaData changes
+  }, [areaData, currentArea]); // React to areaData and currentArea changes
 
   // Effect to handle area-specific updates without reloading the model
   useEffect(() => {
@@ -1106,18 +1327,20 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [areaData?.areaId, areaData?.booths]); // React to area ID and booth changes
 
-  // Effect to handle camera positioning when area changes
+  // Effect to handle camera positioning when area changes (skip individual halls)
   useEffect(() => {
     if (!areaData || !cameraRef.current || !controlsRef.current) return;
 
-    // Function to focus camera on specific area within the combined model (simplified version for regular camera positioning)
+    // All areas now have camera positioning enabled
+    
+    // Function to focus camera for all areas
     const focusCameraOnArea = (areaId: string, controls: OrbitControls, camera: THREE.Camera) => {
       const cameraPositions = {
-        'Hall_B_2': { x: 7.55, y: 3.51, z: -0.48, targetX: 6.62, targetY: -0.15, targetZ: -1.81 }, // Hall B at custom position
-        'Hall_C': { x: 0, y: 3.05, z: 1.63, targetX: 0, targetY: 0, targetZ: 0 },     // Hall C at X=0 (4x zoom: 15/4=3.75, 8/4=2)
-        'Hall_E_3': { x: -3.58, y: 3.06, z: -0.68, targetX: -4.20, targetY: 0.40, targetZ: -1.85 }, // Hall E at X=-5 (4x zoom: 15/4=3.75, 8/4=2)
-        'all_in_one': { x: 0, y: 6.25, z: 3.75, targetX: 0, targetY: 0, targetZ: 0 }, // Full overview (4x zoom: 25/4=6.25, 15/4=3.75)
-        'MainExhibitionHall': { x: 0.00, y: 9.45, z: 5.04, targetX: 0.00, targetY: 0.00, targetZ: 0.00 } // OTD TechDays 2026 Main Exhibition Hall
+        'all_in_one': { x: 0, y: 6.25, z: 3.75, targetX: 0, targetY: 0, targetZ: 0 }, // Full overview
+        'MainExhibitionHall': { x: 0.0, y: 19.38, z: 10.33, targetX: 0.0, targetY: 0.0, targetZ: 0.0 }, // OTD TechDays 2026 Main Exhibition Hall
+        'Hall_B_2': { x: -0.30, y: 11.52, z: 4.96, targetX: -0.30, targetY: 0.49, targetZ: -0.92 }, // Hall B starting position
+        'Hall_C': { x: -2.05, y: 7.87, z: 5.73, targetX: -0.27, targetY: -0.41, targetZ: 0.4 }, // Hall C starting position
+        'Hall_E_3': { x: 0.38, y: 10.70, z: 9.78, targetX: -1.02, targetY: -1.20, targetZ: 1.38 } // Hall E starting position
       };
       
       const position = cameraPositions[areaId as keyof typeof cameraPositions];
@@ -1157,7 +1380,7 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
       }
     };
 
-    // Focus camera after a short delay to ensure model is loaded
+    // Focus camera after a short delay to ensure model is loaded (for all areas)
     const timer = setTimeout(() => {
       focusCameraOnArea(currentArea, controlsRef.current!, cameraRef.current!);
     }, 500);
@@ -1194,63 +1417,81 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
 
   // Function to create a booth callout sprite with canvas texture
   const createBoothCallout = (booth: any, position: THREE.Vector3): THREE.Sprite => {
-    // Check if we're in OTD TechDays 2026 Main Exhibition Hall for 3.5x larger sizing
+    // Check if we're in OTD TechDays 2026 Main Exhibition Hall for larger sizing (reduced from 3.5x to 2x)
     const isTechDays2026 = currentArea === 'MainExhibitionHall';
-    const sizeMultiplier = isTechDays2026 ? 3.5 : 1;
+    // Check if we're in individual halls for larger sizing
+    const isIndividualHall = currentArea === 'Hall_B_2' || currentArea === 'Hall_C' || currentArea === 'Hall_E_3';
+    const sizeMultiplier = isTechDays2026 ? 2 : (isIndividualHall ? 2.5 : 1);
     
     // Determine content based on booth status
-    const hasStatusRecord = booth.status && booth.status !== 'nil';
     const isSoldOrReserved = booth.status && (booth.status.toLowerCase() === 'sold' || booth.status.toLowerCase() === 'reserved');
-    const isAvailable = booth.status && booth.status.toLowerCase() === 'available';
     
-    // Format text exactly like the original CSS3D version
-    let formattedText = '';
+    let canvas: HTMLCanvasElement;
     
     if (isSoldOrReserved) {
-      // Show status (Sold/Reserved) and company name for sold or reserved booths
+      // Show status (Sold/Reserved) and company name for sold or reserved booths using original format
       const statusText = booth.status.charAt(0).toUpperCase() + booth.status.slice(1).toLowerCase();
-      formattedText = booth.id; // First line: booth ID (bold)
+      let formattedText = booth.id; // First line: booth ID (bold)
       if (booth.name && booth.name.trim() !== '') {
         formattedText += `\n\n${statusText}\n\n${booth.name}`; // Status and company name
       } else {
         formattedText += `\n\n${statusText}`; // Just status
       }
-    } else if (isAvailable) {
-      // Show dimensions and area for available booths - THREE LINES
-      formattedText = `${booth.id}\n\n${booth.width}m × ${booth.height}m\n\nArea: ${booth.area}m²`;
-    } else if (hasStatusRecord && booth.name) {
-      // Show company name if there's a status record and it's not sold/reserved/available
-      formattedText = `${booth.id}\n\n${booth.name}`;
+      
+      canvas = createMultiLineTextCanvas({
+        lines: formattedText.split('\n'),
+        titleFontSize: 22 * sizeMultiplier,
+        contentFontSize: 18 * sizeMultiplier,
+        fontFamily: 'Arial, sans-serif',
+        titleColor: 'white',
+        contentColor: 'rgba(255,255,255,0.9)',
+        backgroundColor: 'transparent',
+        padding: 12 * sizeMultiplier,
+        borderRadius: 8 * sizeMultiplier,
+        borderColor: '#ffffff',
+        borderWidth: 1 * sizeMultiplier,
+        maxWidth: 200 * sizeMultiplier,
+        gradient: {
+          colors: ['rgba(43, 179, 43, 0.95)', 'rgba(34, 139, 34, 0.95)'],
+          direction: 'vertical'
+        },
+        shadow: {
+          color: 'rgba(43, 179, 43, 0.4)',
+          blur: 8 * sizeMultiplier,
+          offsetX: 0,
+          offsetY: 4 * sizeMultiplier
+        }
+      });
     } else {
-      // Show dimensions if no status record or no company name - THREE LINES
-      formattedText = `${booth.id}\n\n${booth.width}m × ${booth.height}m\n\nArea: ${booth.area}m²`;
+      // Use new custom format: ID first row, area in lighter box + dimensions second row
+      canvas = createBoothCalloutCanvas({
+        boothId: booth.id,
+        area: `Area: ${booth.area}m²`,
+        dimensions: `${booth.width}m × ${booth.height}m`,
+        titleFontSize: 22 * sizeMultiplier,
+        contentFontSize: 18 * sizeMultiplier,
+        fontFamily: 'Arial, sans-serif',
+        titleColor: 'white',
+        contentColor: 'white',
+        areaBoxColor: 'rgba(255, 255, 255, 0.25)', // Lighter box for area
+        backgroundColor: 'transparent',
+        padding: 12 * sizeMultiplier,
+        borderRadius: 8 * sizeMultiplier,
+        borderColor: '#ffffff',
+        borderWidth: 1 * sizeMultiplier,
+        maxWidth: 200 * sizeMultiplier,
+        gradient: {
+          colors: ['rgba(43, 179, 43, 0.95)', 'rgba(34, 139, 34, 0.95)'],
+          direction: 'vertical'
+        },
+        shadow: {
+          color: 'rgba(43, 179, 43, 0.4)',
+          blur: 8 * sizeMultiplier,
+          offsetX: 0,
+          offsetY: 4 * sizeMultiplier
+        }
+      });
     }
-    
-    // Create canvas texture with proper multi-line rendering
-    const canvas = createMultiLineTextCanvas({
-      lines: formattedText.split('\n'),
-      titleFontSize: 22 * sizeMultiplier, // Larger font for booth ID
-      contentFontSize: 18 * sizeMultiplier, // Smaller font for content
-      fontFamily: '-apple-system, BlinkMacSystemFont, Segoe UI, Helvetica, Arial, sans-serif',
-      titleColor: 'white',
-      contentColor: 'rgba(255,255,255,0.9)',
-      backgroundColor: 'transparent',
-      padding: 12 * sizeMultiplier,
-      borderRadius: 8 * sizeMultiplier,
-      borderColor: '#ffffff',
-      borderWidth: 1 * sizeMultiplier,
-      maxWidth: 200 * sizeMultiplier,
-      gradient: {
-        colors: ['rgba(102, 170, 255, 0.95)', 'rgba(51, 102, 204, 0.95)'],
-        direction: 'vertical'
-      },
-      shadow: {
-        color: 'rgba(102, 170, 255, 0.4)',
-        blur: 8 * sizeMultiplier,
-        offsetX: 0,
-        offsetY: 4 * sizeMultiplier
-      }
-    });
     
     // Create texture from canvas
     const texture = new THREE.CanvasTexture(canvas);
@@ -1268,9 +1509,9 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
     const sprite = new THREE.Sprite(material);
     sprite.position.copy(position);
     
-    // Scale the sprite appropriately - reduced by half
+    // Scale the sprite appropriately - increased by 2x
     // Adjust scale based on canvas aspect ratio to maintain proper proportions
-    const baseScale = 0.4 * sizeMultiplier; // Reduced from 0.8 to 0.4 (50% smaller)
+    const baseScale = 0.8 * sizeMultiplier; // Increased from 0.4 to 0.8 (2x larger)
     const aspectRatio = canvas.height / canvas.width;
     sprite.scale.set(baseScale, baseScale * aspectRatio, 1);
     
@@ -1279,7 +1520,9 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
     sprite.userData.isTechDays2026 = isTechDays2026;
     
     if (isTechDays2026) {
-      console.log(`🎯 Created 3.5x larger sprite callout for TechDays 2026 booth ${booth.id}`);
+      console.log(`🎯 Created 2x larger sprite callout for TechDays 2026 booth ${booth.id}`);
+    } else if (isIndividualHall) {
+      console.log(`🎯 Created 2.5x larger sprite callout for individual hall ${currentArea} booth ${booth.id}`);
     }
     
     return sprite;
@@ -1289,7 +1532,11 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
   const createBoothNameCallout = (booth: any, position: THREE.Vector3): THREE.Sprite => {
     // Check if we're in MainExhibitionHall for larger name callouts
     const isMainExhibitionHall = currentArea === 'MainExhibitionHall';
-    const spriteSizeMultiplier = isMainExhibitionHall ? 2 : 1;
+    // Check if we're in individual halls for larger name callouts
+    const isIndividualHall = currentArea === 'Hall_B_2' || currentArea === 'Hall_C' || currentArea === 'Hall_E_3';
+    // Check if we're in all_in_one overview for smaller name callouts
+    const isAllInOneOverview = currentArea === 'all_in_one';
+    const spriteSizeMultiplier = isMainExhibitionHall ? 2 : (isIndividualHall ? 1.8 : (isAllInOneOverview ? 0.7 : 1));
     
     // For names longer than 10 characters, enable multi-line wrapping
     const shouldWrap = booth.name.length > 10;
@@ -1299,7 +1546,7 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
     const canvas = createTextCanvas({
       text: displayName,
       fontSize: 16.8, // 20% larger than 14px (14 * 1.2 = 16.8)
-      fontFamily: '-apple-system, BlinkMacSystemFont, Segoe UI, Helvetica, Arial, sans-serif',
+      fontFamily: 'Arial, sans-serif',
       color: '#66aaff',
       backgroundColor: 'rgba(0, 0, 0, 0.9)',
       padding: 4,
@@ -1327,9 +1574,9 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
     const sprite = new THREE.Sprite(material);
     sprite.position.copy(position);
     
-    // Scale the sprite - larger for MainExhibitionHall but font size stays same
+    // Scale the sprite - increased by 2x overall
     // Maintain proper aspect ratio for text readability
-    const baseScale = 0.25 * spriteSizeMultiplier; // 2x larger sprite for MainExhibitionHall
+    const baseScale = 0.5 * spriteSizeMultiplier; // Increased from 0.25 to 0.5 (2x larger)
     const aspectRatio = canvas.height / canvas.width;
     sprite.scale.set(baseScale, baseScale * aspectRatio, 1);
     
@@ -1340,6 +1587,10 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
     
     if (isMainExhibitionHall) {
       console.log(`🏢 Created 2x larger name callout for MainExhibitionHall booth ${booth.id}: ${booth.name} (${shouldWrap ? 'multi-line' : 'single-line'})`);
+    } else if (isIndividualHall) {
+      console.log(`🏢 Created 1.8x larger name callout for individual hall ${currentArea} booth ${booth.id}: ${booth.name} (${shouldWrap ? 'multi-line' : 'single-line'})`);
+    } else if (isAllInOneOverview) {
+      console.log(`🏢 Created 0.7x smaller name callout for all_in_one overview booth ${booth.id}: ${booth.name} (${shouldWrap ? 'multi-line' : 'single-line'})`);
     }
     
     return sprite;
@@ -1384,14 +1635,14 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
   const getStatusColor = (status: string): number => {
     switch (status.toLowerCase()) {
       case 'sold':
-        return 0x888888; // Grey
+        return 0x0430A9; // Blue (#0430A9)
       case 'reserved':
-        return 0x87CEEB; // Light blue
+        return 0x0430A9; // Blue (#0430A9) - same as sold
       case 'available':
-        return 0x00FF00; // Green
+        return 0x659C3E; // Green (#659C3E)
       case 'nil':
       default:
-        return 0x00FF00; // Green (default for booths without entry)
+        return 0x659C3E; // Green (#659C3E) - default for booths without entry
     }
   };
 
@@ -1432,7 +1683,7 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
       }
     });
     
-    // Also color any unmapped meshes that match booth patterns as available (green)
+    // Color any unmapped meshes that match booth patterns as available (green)
     if (sceneRef.current) {
       sceneRef.current.traverse((object) => {
         if (object instanceof THREE.Mesh && object.name) {
@@ -1449,11 +1700,11 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
               }
               
               const mat = Array.isArray(object.material) ? object.material[0] : object.material;
-              (mat as THREE.MeshStandardMaterial).color.setHex(0x00FF00); // Green for available
-              object.userData._statusColor = 0x00FF00;
+              (mat as THREE.MeshStandardMaterial).color.setHex(0x659C3E); // Green for available
+              object.userData._statusColor = 0x659C3E;
               object.userData._status = 'available';
               
-              console.log(`    Applied available color to unmapped booth mesh ${object.name}`);
+              console.log(`    Applied available green color to unmapped booth mesh ${object.name}`);
             }
           }
         }
@@ -1485,12 +1736,15 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
         
         // Create name callout - positioned closer to the mesh
         const nameCalloutPosition = center.clone();
-        nameCalloutPosition.y += 0.4; // Closer position for name callouts
+        // Adjust height based on current area - MainExhibitionHall needs higher positioning to avoid booth overlap
+        const isMainExhibitionHall = currentArea === 'MainExhibitionHall';
+        const heightOffset = isMainExhibitionHall ? 0.8 : 0.41; // Higher for MainExhibitionHall to avoid booth overlap
+        nameCalloutPosition.y += heightOffset;
         const nameCallout = createBoothNameCallout(booth, nameCalloutPosition);
         sceneRef.current?.add(nameCallout);
         nameCalloutsRef.current.push(nameCallout);
         
-        console.log(`    Added name callout for ${booth.id}: ${booth.name}`);
+        console.log(`    Added name callout for ${booth.id}: ${booth.name} (height offset: ${heightOffset})`);
       }
     });
     
