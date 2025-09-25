@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import WebGLScene from './WebGLScene';
 import AreaSelector from './components/AreaSelector';
-import BoothStatus from './components/BoothStatus';
+// import BoothStatus from './components/BoothStatus'; // Hidden statistics menu
 import { useAreaData } from './hooks/useAreaData';
 import './App.css';
 
@@ -47,8 +47,8 @@ const App: React.FC = () => {
         showExhibitorDetails={showExhibitorDetails}
         onToggleExhibitorDetails={setShowExhibitorDetails}
       />
-      <BoothStatus areaData={areaData} />
-      <WebGLScene 
+      {/* <BoothStatus areaData={areaData} /> */} {/* Hidden statistics menu */}
+      <WebGLScene
         areaData={areaData} 
         currentArea={currentArea}
         showExhibitorDetails={showExhibitorDetails}

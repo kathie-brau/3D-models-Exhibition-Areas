@@ -29,6 +29,7 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
   const currentAutoTourIndexRef = useRef<number>(0); // Current hall index in auto-tour
   const autoTourAnimationRef = useRef<number | null>(null); // Auto-tour animation frame reference
   // const autoTourStartTimeRef = useRef<number>(0); // Auto-tour animation start time (currently unused)
+  const lastClickedBoothRef = useRef<any>(null); // Track the last clicked booth for toggle functionality
 
   // Helper function to determine which model should be loaded
   const getModelPath = (areaId: string): string => {
@@ -845,9 +846,21 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
       
       console.log(`📏 Callout position:`, center);
       
-      // Create info callout (ID, dimensions, area) - positioned higher above the mesh
+      // Create info callout (ID, dimensions, area) - positioned above the mesh
       const infoCalloutPosition = center.clone();
-      infoCalloutPosition.y += 1.2; // Higher position for info callouts
+      
+      // Adjust height offset based on current area
+      let heightOffset: number;
+      if (currentArea === 'all_in_one') {
+        heightOffset = 0.6; // Closer to models for Exhibition OTD Energy
+      } else if (currentArea === 'MainExhibitionHall') {
+        heightOffset = 1.2; // Standard height for MainExhibitionHall
+      } else {
+        heightOffset = 1.0; // Default height for other areas
+      }
+      
+      infoCalloutPosition.y += heightOffset;
+      console.log(`📏 Using height offset ${heightOffset} for area ${currentArea}`);
       const infoCallout = createBoothCallout(booth, infoCalloutPosition);
       scene.add(infoCallout);
       calloutsRef.current.push(infoCallout);
@@ -1117,6 +1130,7 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
       if (!hits.length) {
         // Clicked on empty space - hide only info callouts (keep name callouts)
         clearCallouts();
+        lastClickedBoothRef.current = null; // Reset last clicked booth
         return;
       }
 
@@ -1126,8 +1140,21 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
       const boothData = boothMeshMapRef.current.get(clickedMesh);
       
       if (boothData) {
-        // Show info callout for any booth (including sold/reserved)
-        showBoothInfoCallout(boothData, clickedMesh);
+        // Check if this is the same booth that was clicked before
+        const isSameBooth = lastClickedBoothRef.current && 
+                           lastClickedBoothRef.current.id === boothData.id;
+        
+        if (isSameBooth && calloutsRef.current.length > 0) {
+          // Second click on same booth - hide callout (toggle off)
+          console.log(`🔄 Toggling OFF callout for booth ${boothData.id}`);
+          clearCallouts();
+          lastClickedBoothRef.current = null;
+        } else {
+          // First click on this booth or different booth - show callout (toggle on)
+          console.log(`🔄 Toggling ON callout for booth ${boothData.id}`);
+          showBoothInfoCallout(boothData, clickedMesh);
+          lastClickedBoothRef.current = boothData;
+        }
       }
     };
 
@@ -1417,14 +1444,26 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
 
   // Function to create a booth callout sprite with canvas texture
   const createBoothCallout = (booth: any, position: THREE.Vector3): THREE.Sprite => {
-    // Check if we're in OTD TechDays 2026 Main Exhibition Hall for larger sizing (reduced from 3.5x to 2x)
+    // Check if we're in OTD TechDays 2026 Main Exhibition Hall for larger sizing
     const isTechDays2026 = currentArea === 'MainExhibitionHall';
     // Check if we're in individual halls for larger sizing
     const isIndividualHall = currentArea === 'Hall_B_2' || currentArea === 'Hall_C' || currentArea === 'Hall_E_3';
-    const sizeMultiplier = isTechDays2026 ? 2 : (isIndividualHall ? 2.5 : 1);
     
     // Determine content based on booth status
     const isSoldOrReserved = booth.status && (booth.status.toLowerCase() === 'sold' || booth.status.toLowerCase() === 'reserved');
+    const isAvailable = !isSoldOrReserved; // Available booths (nil, available, or undefined status)
+    
+    // Special sizing for available callouts in MainExhibitionHall - make them 4x (2x * 2x)
+    let sizeMultiplier: number;
+    if (isTechDays2026 && isAvailable) {
+      sizeMultiplier = 4; // 4x size for available booths in MainExhibitionHall
+    } else if (isTechDays2026) {
+      sizeMultiplier = 2; // 2x size for sold/reserved booths in MainExhibitionHall
+    } else if (isIndividualHall) {
+      sizeMultiplier = 2.5; // 2.5x size for individual halls
+    } else {
+      sizeMultiplier = 1; // Default size for other areas
+    }
     
     let canvas: HTMLCanvasElement;
     
@@ -1519,8 +1558,10 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
     sprite.userData.booth = booth;
     sprite.userData.isTechDays2026 = isTechDays2026;
     
-    if (isTechDays2026) {
-      console.log(`🎯 Created 2x larger sprite callout for TechDays 2026 booth ${booth.id}`);
+    if (isTechDays2026 && isAvailable) {
+      console.log(`🎯 Created 4x larger sprite callout for AVAILABLE TechDays 2026 booth ${booth.id}`);
+    } else if (isTechDays2026) {
+      console.log(`🎯 Created 2x larger sprite callout for ${booth.status?.toUpperCase()} TechDays 2026 booth ${booth.id}`);
     } else if (isIndividualHall) {
       console.log(`🎯 Created 2.5x larger sprite callout for individual hall ${currentArea} booth ${booth.id}`);
     }
@@ -1610,6 +1651,8 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
         }
       });
       calloutsRef.current = [];
+      // Reset last clicked booth when callouts are cleared
+      lastClickedBoothRef.current = null;
     }
   };
 
