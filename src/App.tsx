@@ -6,7 +6,7 @@ import { useAreaData } from './hooks/useAreaData';
 import './App.css';
 
 const App: React.FC = () => {
-  const [currentArea, setCurrentArea] = useState<string>('Hall_C');
+  const [currentArea, setCurrentArea] = useState<string>('all_in_one');
   const [showExhibitorDetails, setShowExhibitorDetails] = useState<boolean>(false);
   const { data: areaData, loading, error } = useAreaData(currentArea);
 
