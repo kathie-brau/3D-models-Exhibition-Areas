@@ -105,29 +105,52 @@ export class CameraAnimator {
   }
 
   /**
-   * Perform circular camera motion around the current target
+   * Perform circular camera motion around Y-axis using AUTO_TOUR_POSITIONS
+   * Rotates around the point where camera-to-target vector intersects y=0 plane
    */
   static performCircularMotion(
     camera: THREE.Camera,
     controls: OrbitControls,
     duration: number = 3000,
-    onComplete?: () => void
+    onComplete?: () => void,
+    areaId?: string
   ): void {
-    console.log('🔄 Starting circular motion at hall');
+    console.log(`🔄 Starting Y-axis circular motion for area: ${areaId}`);
     
-    const basePosition = camera.position.clone();
-    const lookAtTarget = controls.target.clone();
-    const radius = basePosition.distanceTo(lookAtTarget);
+    // Get the original AUTO_TOUR_POSITIONS for this area
+    const originalPosition = areaId ? this.AUTO_TOUR_POSITIONS[areaId] : null;
+    if (!originalPosition) {
+      console.error(`No AUTO_TOUR_POSITIONS found for area: ${areaId}`);
+      if (onComplete) onComplete();
+      return;
+    }
     
-    console.log('📍 Circular motion setup:', {
-      basePosition: basePosition,
-      lookAtTarget: lookAtTarget,
-      radius: radius
+    // Use original camera and target positions from AUTO_TOUR_POSITIONS
+    const cameraPos = new THREE.Vector3(originalPosition.x, originalPosition.y, originalPosition.z);
+    const targetPos = new THREE.Vector3(originalPosition.targetX, originalPosition.targetY, originalPosition.targetZ);
+    
+    // Calculate where the camera-to-target vector intersects the y=0 plane
+    const direction = targetPos.clone().sub(cameraPos).normalize();
+    const t = -cameraPos.y / direction.y; // Solve for intersection with y=0 plane
+    const rotationCenter = cameraPos.clone().add(direction.multiplyScalar(t));
+    rotationCenter.y = 0; // Ensure it's on the ground plane
+    
+    // Calculate radius from camera position to rotation center (only X and Z)
+    const centerToCameraVector = cameraPos.clone().sub(rotationCenter);
+    const radius = Math.sqrt(centerToCameraVector.x * centerToCameraVector.x + centerToCameraVector.z * centerToCameraVector.z);
+    const cameraHeight = cameraPos.y;
+    
+    // Calculate initial angle
+    const initialAngle = Math.atan2(centerToCameraVector.x, centerToCameraVector.z);
+    
+    console.log('📍 Y-axis rotation setup:', {
+      originalCamera: cameraPos,
+      originalTarget: targetPos,
+      rotationCenter: rotationCenter,
+      radius: radius.toFixed(2),
+      cameraHeight: cameraHeight.toFixed(2),
+      initialAngle: (initialAngle * 180 / Math.PI).toFixed(1) + '°'
     });
-    
-    // Calculate the initial angle
-    const direction = basePosition.clone().sub(lookAtTarget).normalize();
-    const initialAngle = Math.atan2(direction.x, direction.z);
     
     // Temporarily disable controls during circular motion
     const controlsWereEnabled = controls.enabled;
@@ -140,33 +163,36 @@ export class CameraAnimator {
       const progress = Math.min(elapsed / duration, 1);
       
       if (progress < 1) {
-        // Calculate circular motion angle (full circle)
-        const angle = initialAngle + (Math.PI * 2 * progress);
+        // Calculate current angle for 360-degree Y-axis rotation with constant velocity
+        const currentAngle = initialAngle + (Math.PI * 2 * progress);
         
-        // Calculate new camera position in a circle around the target
-        const newX = lookAtTarget.x + Math.sin(angle) * radius;
-        const newZ = lookAtTarget.z + Math.cos(angle) * radius;
+        // Calculate new camera position rotating around Y-axis
+        const newCameraX = rotationCenter.x + Math.sin(currentAngle) * radius;
+        const newCameraZ = rotationCenter.z + Math.cos(currentAngle) * radius;
         
-        // Keep the same Y position (height) and update camera
-        camera.position.set(newX, basePosition.y, newZ);
-        camera.lookAt(lookAtTarget);
+        // Update camera position (maintain original height)
+        camera.position.set(newCameraX, cameraHeight, newCameraZ);
+        
+        // Always look at the original target position
+        camera.lookAt(targetPos);
+        controls.target.copy(targetPos);
         
         // Log progress every 10%
         if (Math.floor(progress * 10) !== Math.floor((progress - 0.1) * 10)) {
-          console.log(`🔄 Circular motion progress: ${Math.floor(progress * 100)}%`);
+          console.log(`🔄 Y-axis rotation progress: ${Math.floor(progress * 100)}%`);
         }
         
         requestAnimationFrame(circularMotion);
       } else {
-        console.log('✅ Circular motion complete');
+        console.log('✅ Y-axis rotation complete');
         
-        // Re-enable controls and restore them
+        // Re-enable controls and ensure target is set correctly
         controls.enabled = controlsWereEnabled;
-        controls.target.copy(lookAtTarget);
+        controls.target.copy(targetPos);
         controls.update();
         
         if (onComplete) {
-          setTimeout(onComplete, 100); // Small delay before callback
+          setTimeout(onComplete, 50); // Reduced delay before next transition
         }
       }
     };
@@ -196,12 +222,17 @@ export class CameraAnimator {
       return;
     }
     
-    const duration = isAutoTour ? 2000 : 1000; // Slower animation for auto-tour
+    const duration = isAutoTour ? 4000 : 1000; // Twice slower animation for auto-tour
     
     const onAnimationComplete = () => {
       if (isAutoTour && onAutoTourComplete) {
-        // Skip circular motion - move directly to next position after a pause
-        setTimeout(onAutoTourComplete, 1000); // 1 second pause at each position
+        // Add 360-degree rotation for hall positions B, C, E (not for overview)
+        if (areaId === 'B' || areaId === 'C' || areaId === 'E') {
+          this.performCircularMotion(camera, controls, 10000, onAutoTourComplete, areaId); // 10 seconds for full rotation
+        } else {
+          // For 'all_in_one' overview, just pause briefly before next transition
+          setTimeout(onAutoTourComplete, 100); // Brief pause at overview
+        }
       }
     };
     

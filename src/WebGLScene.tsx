@@ -165,11 +165,11 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
       if (currentArea === 'all_in_one') {
         // Set new timeout for auto-tour
         autoTourTimeoutRef.current = setTimeout(() => {
-          if (Date.now() - lastInteractionTimeRef.current >= 5000) {
-            console.log('💤 User inactive for 5 seconds, starting auto-tour...');
+          if (Date.now() - lastInteractionTimeRef.current >= 500) {
+            console.log('💤 User inactive for 500ms, starting auto-tour...');
             startAutoTour();
           }
-        }, 5000);
+        }, 500);
       }
     };
 
