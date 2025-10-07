@@ -18,28 +18,31 @@ interface CameraPosition {
  */
 export class CameraAnimator {
   /**
-   * Predefined camera positions for different areas
+   * Auto-tour positions - only for all_in_one model auto-tour
    */
-  static readonly CAMERA_POSITIONS: Record<string, CameraPosition> = {
-    // Auto-tour positions (with special handling for individual halls)
-    'Hall_B_2': { x: 7.55, y: 3.51, z: -0.48, targetX: 6.62, targetY: -0.15, targetZ: -1.81 },
-    'Hall_C': { x: -2.05, y: 7.87, z: 5.73, targetX: -0.27, targetY: -0.41, targetZ: 0.4 },
-    'Hall_E_3': { x: -3.58, y: 3.06, z: -0.68, targetX: -4.20, targetY: 0.40, targetZ: -1.85 },
-    
-    // Regular area positions
-    'Hall_B_2_regular': { x: -0.30, y: 11.52, z: 4.96, targetX: -0.30, targetY: 0.49, targetZ: -0.92 },
-    'Hall_C_regular': { x: -2.05, y: 7.87, z: 5.73, targetX: -0.27, targetY: -0.41, targetZ: 0.4 },
-    'Hall_E_3_regular': { x: 0.38, y: 10.70, z: 9.78, targetX: -1.02, targetY: -1.20, targetZ: 1.38 },
-    
-    // Overview positions
-    'all_in_one': { x: 0, y: 6.25, z: 3.75, targetX: 0, targetY: 0, targetZ: 0 },
-    'MainExhibitionHall': { x: 0.0, y: 19.38, z: 10.33, targetX: 0.0, targetY: 0.0, targetZ: 0.0 }
+  static readonly AUTO_TOUR_POSITIONS: Record<string, CameraPosition> = {
+    // Auto-tour positions within the all_in_one model
+    'all_in_one': { x: 0.03, y: 7.2, z: 1.6, targetX: 0.03, targetY: 0.93, targetZ: -1.74 },
+    'B': { x: 8.00, y: 3.81, z: -0.71, targetX: 6.85, targetY: -0.66, targetZ: -2.44 },
+    'C': { x: 0.74, y: 3.47, z: 1.39, targetX: 0.76, targetY: 0.21, targetZ: -0.18 },
+    'E': { x: -3.31, y: 2.83, z: -0.21, targetX: -4.32, targetY: 0.78, targetZ: -1.57 }
+  };
+
+  /**
+   * Starting camera positions for each model when first loaded
+   */
+  static readonly STARTING_POSITIONS: Record<string, CameraPosition> = {
+    'MainExhibitionHall': { x: 1.45, y: 14.72, z: 10.42, targetX: 1.45, targetY: -1.07, targetZ: 2.00 },
+    'all_in_one': { x: 0.03, y: 7.2, z: 1.6, targetX: 0.03, targetY: 0.93, targetZ: -1.74 },
+    'Hall_B_2': { x: -0.63, y: 10.49, z: 4.30, targetX: -0.63, targetY: 0.54, targetZ: -1.01 },
+    'Hall_C': { x: 0.88, y: 8.59, z: 4.45, targetX: 0.88, targetY: 0.05, targetZ: -0.10 },
+    'Hall_E_3': { x: -0.60, y: 11.04, z: 7.25, targetX: -0.6, targetY: -0.56, targetZ: 1.06 }
   };
 
   /**
    * Auto-tour hall sequence (circular)
    */
-  static readonly AUTO_TOUR_HALLS = ['Hall_B_2', 'Hall_C', 'Hall_E_3', 'all_in_one'];
+  static readonly AUTO_TOUR_HALLS = ['all_in_one', 'B', 'C', 'E'];
 
   /**
    * Animate camera to a specific position with smooth easing
@@ -52,17 +55,18 @@ export class CameraAnimator {
     isAutoTour: boolean = false,
     onComplete?: () => void
   ): void {
-    // Determine which position to use based on context
-    let positionKey = areaId;
+    // Choose the correct position source based on context
+    const positions = isAutoTour ? this.AUTO_TOUR_POSITIONS : this.STARTING_POSITIONS;
+    const position = positions[areaId];
     
-    // For auto-tour, use special positions for individual halls
-    if (!isAutoTour && (areaId === 'Hall_B_2' || areaId === 'Hall_C' || areaId === 'Hall_E_3')) {
-      positionKey = `${areaId}_regular`;
+    if (!position) {
+      console.warn(`No camera position defined for area: ${areaId} (${isAutoTour ? 'auto-tour' : 'starting'})`);
+      return;
     }
     
-    const position = this.CAMERA_POSITIONS[positionKey];
-    if (!position) {
-      console.warn(`No camera position defined for area: ${areaId}`);
+    // Only allow auto-tour animations for halls in the auto-tour sequence
+    if (isAutoTour && !this.AUTO_TOUR_HALLS.includes(areaId)) {
+      console.log(`📹 Auto-tour animation only allowed for auto-tour halls: ${areaId}`);
       return;
     }
 
@@ -171,18 +175,24 @@ export class CameraAnimator {
   }
 
   /**
-   * Focus camera on area with optional auto-tour behavior
+   * Focus camera on area - only for all_in_one model auto-tour
    */
   static focusCameraOnArea(
     areaId: string,
     controls: OrbitControls,
     camera: THREE.Camera,
     isAutoTour: boolean = false,
-    onAutoTourComplete?: () => void
+    onAutoTourComplete?: () => void,
+    currentModelArea?: string
   ): void {
-    // Skip camera positioning for individual halls unless it's auto-tour
-    if (!isAutoTour && (areaId === 'Hall_B_2' || areaId === 'Hall_C' || areaId === 'Hall_E_3')) {
-      console.log(`📹 Skipping camera positioning for individual hall: ${areaId} (not auto-tour)`);
+    // Only allow camera positioning for auto-tour on all_in_one model
+    if (!isAutoTour) {
+      console.log(`📹 Camera positioning disabled for non-auto-tour: ${areaId}`);
+      return;
+    }
+    
+    if (currentModelArea !== 'all_in_one') {
+      console.log(`📹 Auto-tour only available on all_in_one model, current model: ${currentModelArea}`);
       return;
     }
     
@@ -190,8 +200,8 @@ export class CameraAnimator {
     
     const onAnimationComplete = () => {
       if (isAutoTour && onAutoTourComplete) {
-        // Start circular motion after reaching the position
-        this.performCircularMotion(camera, controls, 3000, onAutoTourComplete);
+        // Skip circular motion - move directly to next position after a pause
+        setTimeout(onAutoTourComplete, 1000); // 1 second pause at each position
       }
     };
     
@@ -210,9 +220,34 @@ export class CameraAnimator {
   }
 
   /**
-   * Check if camera positioning should be skipped for an area
+   * Set starting camera position without animation for model initialization
+   */
+  static setStartingCameraPosition(
+    camera: THREE.Camera,
+    controls: OrbitControls,
+    areaId: string
+  ): boolean {
+    const position = this.STARTING_POSITIONS[areaId];
+    
+    if (!position) {
+      console.warn(`No starting position defined for area: ${areaId}`);
+      return false;
+    }
+    
+    console.log(`📹 Setting starting camera position for ${areaId}:`, position);
+    
+    // Set camera position and target immediately without animation
+    camera.position.set(position.x, position.y, position.z);
+    controls.target.set(position.targetX, position.targetY, position.targetZ);
+    controls.update();
+    
+    return true;
+  }
+
+  /**
+   * Check if camera positioning should be skipped for an area - now skips everything except auto-tour
    */
   static shouldSkipCameraPositioning(areaId: string, isAutoTour: boolean): boolean {
-    return !isAutoTour && (areaId === 'Hall_B_2' || areaId === 'Hall_C' || areaId === 'Hall_E_3');
+    return !isAutoTour; // Skip all camera animations except auto-tour
   }
 }

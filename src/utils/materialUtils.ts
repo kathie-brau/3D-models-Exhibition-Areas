@@ -36,14 +36,14 @@ export class MaterialManager {
   static getStatusColor(status: string): number {
     switch (status?.toLowerCase()) {
       case 'sold':
-        return 0x0430A9; // Blue (#0430A9)
-      case 'reserved':
-        return 0x0430A9; // Blue (#0430A9) - same as sold
-      case 'available':
         return 0x659C3E; // Green (#659C3E)
+      case 'reserved':
+        return 0x659C3E; // Green (#659C3E) - same as sold
+      case 'available':
+        return 0x0430A9; // Blue (#0430A9)
       case 'nil':
       default:
-        return 0x659C3E; // Green (#659C3E) - default for booths without entry
+        return 0x0430A9; // Blue (#0430A9) - default for booths without entry
     }
   }
 
@@ -83,7 +83,7 @@ export class MaterialManager {
   static applyDefaultColorsToUnmappedMeshes(
     scene: THREE.Scene,
     meshMap: Map<THREE.Mesh, Booth>,
-    defaultColor: number = 0x659C3E // Green for available
+    defaultColor: number = 0x0430A9 // Blue for available
   ): void {
     scene.traverse((object) => {
       if (object instanceof THREE.Mesh && object.name) {
@@ -94,7 +94,7 @@ export class MaterialManager {
             this.applyColorToMesh(object, defaultColor);
             object.userData._status = 'available';
             
-            console.log(`    Applied available green color to unmapped booth mesh ${object.name}`);
+            console.log(`    Applied available blue color to unmapped booth mesh ${object.name}`);
           }
         }
       }
@@ -160,9 +160,9 @@ export class MaterialManager {
    */
   static getHoverGlowColor(status: string): number {
     if (status === 'sold' || status === 'reserved') {
-      return 0x0430A9; // Blue glow for sold/reserved
+      return 0x659C3E; // Green glow for sold/reserved
     } else {
-      return 0x659C3E; // Green glow for available
+      return 0x0430A9; // Blue glow for available
     }
   }
 }

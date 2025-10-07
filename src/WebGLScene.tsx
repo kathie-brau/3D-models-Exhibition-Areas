@@ -40,7 +40,7 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
   const getModelPath = (areaId: string): string => {
     // Use process.env.PUBLIC_URL to handle both development and production paths
     const basePath = process.env.PUBLIC_URL || '';
-    
+
     // Each hall loads its own individual model
     switch (areaId) {
       case 'Hall_B_2':
@@ -63,7 +63,7 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
 
   useEffect(() => {
     if (!areaData) return;
-    
+
     console.log(`🏗️ Main useEffect triggered - Area: ${areaData.areaId}`);
 
     const currentMount = mountRef.current;
@@ -76,7 +76,7 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0xffffff); // White background
     sceneRef.current = scene;
-    
+
     // CSS3D scene no longer needed - callouts now use sprites in WebGL scene
 
     // Camera setup - position to see the full 20x10m floor
@@ -100,8 +100,8 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
 
     // Auto-tour hall sequence from CameraAnimator
     const autoTourHalls = CameraAnimator.AUTO_TOUR_HALLS;
-    
-    // Function to focus camera on specific area using CameraAnimator
+
+    // Function to focus camera on specific area using CameraAnimator (only for all_in_one auto-tour)
     const focusCameraOnArea = (areaId: string, controls: OrbitControls, camera: THREE.Camera, isAutoTour: boolean = false) => {
       const onAutoTourComplete = () => {
         if (autoTourActiveRef.current) {
@@ -110,25 +110,31 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
           }, 100); // Small delay before moving to next hall
         }
       };
-      
-      CameraAnimator.focusCameraOnArea(areaId, controls, camera, isAutoTour, onAutoTourComplete);
+
+      CameraAnimator.focusCameraOnArea(areaId, controls, camera, isAutoTour, onAutoTourComplete, currentArea);
     };
-    
-    // Function to start auto-tour
+
+    // Function to start auto-tour (only for all_in_one model)
     const startAutoTour = () => {
       if (!controlsRef.current || !cameraRef.current) return;
-      
+
+      // Only allow auto-tour on all_in_one model
+      if (currentArea !== 'all_in_one') {
+        console.log(`🎬 Auto-tour only available on all_in_one model, current model: ${currentArea}`);
+        return;
+      }
+
       autoTourActiveRef.current = true;
       const { hall: nextHall, nextIndex } = CameraAnimator.getNextAutoTourHall(currentAutoTourIndexRef.current);
-      
+
       console.log(`🎬 Auto-tour: Moving to ${nextHall} (${currentAutoTourIndexRef.current + 1}/${autoTourHalls.length})`);
-      
+
       focusCameraOnArea(nextHall, controlsRef.current, cameraRef.current, true);
-      
+
       // Move to next hall (circular)
       currentAutoTourIndexRef.current = nextIndex;
     };
-    
+
     // Function to stop auto-tour
     const stopAutoTour = () => {
       if (autoTourActiveRef.current) {
@@ -144,24 +150,27 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
         autoTourAnimationRef.current = null;
       }
     };
-    
-    // Function to handle user interaction (resets idle timer)
+
+    // Function to handle user interaction (resets idle timer) - only enables auto-tour for all_in_one model
     const handleUserInteraction = () => {
       lastInteractionTimeRef.current = Date.now();
       stopAutoTour();
-      
+
       // Clear existing timeout
       if (autoTourTimeoutRef.current) {
         clearTimeout(autoTourTimeoutRef.current);
       }
-      
-      // Set new timeout for auto-tour
-      autoTourTimeoutRef.current = setTimeout(() => {
-        if (Date.now() - lastInteractionTimeRef.current >= 5000) {
-          console.log('💤 User inactive for 5 seconds, starting auto-tour...');
-          startAutoTour();
-        }
-      }, 5000);
+
+      // Only set auto-tour timeout for all_in_one model
+      if (currentArea === 'all_in_one') {
+        // Set new timeout for auto-tour
+        autoTourTimeoutRef.current = setTimeout(() => {
+          if (Date.now() - lastInteractionTimeRef.current >= 5000) {
+            console.log('💤 User inactive for 5 seconds, starting auto-tour...');
+            startAutoTour();
+          }
+        }, 5000);
+      }
     };
 
     const controls = new OrbitControls(camera, renderer.domElement);
@@ -172,7 +181,7 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
     controls.maxDistance = 50;          // max. distance
     controls.enablePan = true;          // panoramic view, if necessary
     controlsRef.current = controls;     // Store controls reference
-    
+
     // Add interaction listeners to controls
     controls.addEventListener('start', handleUserInteraction); // When user starts interacting with controls
     controls.addEventListener('change', handleUserInteraction); // When controls change
@@ -186,24 +195,24 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
     // Function to show info callout for a specific booth (on click)
     const showBoothInfoCallout = (booth: any, mesh: THREE.Mesh) => {
       console.log(`📝 showBoothInfoCallout called for booth:`, booth);
-      
+
       if (!scene) {
         console.error('❌ scene not available');
         return;
       }
-      
+
       // Clear only info callouts (keep name callouts visible)
       clearCallouts();
-      
+
       // Create callout position using CalloutManager
       const infoCalloutPosition = CalloutManager.createCalloutPosition(mesh, currentArea, 'info');
-      
+
       console.log(`📏 Callout position:`, infoCalloutPosition);
       console.log(`📏 Using height offset ${CalloutManager.getHeightOffset(currentArea, 'info')} for area ${currentArea}`);
-      
+
       const infoCallout = createBoothCallout(booth, infoCalloutPosition);
       CalloutManager.addCalloutToScene(scene, infoCallout, calloutsRef.current);
-      
+
       console.log(`✅ Info callout sprite created and added for booth ${booth.id}`);
     };
 
@@ -310,26 +319,29 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
         // Centering/scale
         const box = new THREE.Box3().setFromObject(rootModel);
         const size = box.getSize(new THREE.Vector3());
-        
+
         box.getCenter(new THREE.Vector3());
         const maxDim = Math.max(size.x, size.y, size.z);
-        let scale = (10 / (maxDim || 1))* 2;
-        
+        let scale = (10 / (maxDim || 1)) * 2;
+
         // Make MainExhibitionHall model 1.5x larger
         if (currentArea === 'MainExhibitionHall') {
           scale = scale * 1.5;
           console.log(`🏗️ Applying 1.5x scale to MainExhibitionHall model (final scale: ${scale.toFixed(3)})`);
         }
-        
+
         rootModel.scale.setScalar(scale);
         rootModel.position.y = 0.01;
         scene.add(rootModel);
 
         // Update all matrix transforms after scaling and positioning
         rootModel.updateMatrixWorld(true);
-        
+
         // Map booth meshes after model is loaded, scaled, and positioned
         // Wait a bit for the scene to fully render before mapping meshes
+        if (cameraRef.current && controlsRef.current) {
+          CameraAnimator.setStartingCameraPosition(cameraRef.current, controlsRef.current, currentArea);
+        }
         setTimeout(() => {
           mapBoothMeshes();
           // Apply booth status colors after mapping is complete
@@ -341,7 +353,10 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
                 createAllNameCallouts();
               }, 100);
             }
-            // Start auto-tour timer after everything is initialized
+            // Set starting camera position for this model
+
+
+            // Start auto-tour timer after everything is initialized (only for all_in_one)
             setTimeout(() => {
               handleUserInteraction();
             }, 500);
@@ -395,12 +410,12 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
           if (hovered) {
             MaterialManager.removeHoverEffect(hovered);
           }
-          
+
           // Get the booth's status to determine glow color
           const boothData = boothMeshMapRef.current.get(m);
           const status = boothData?.status?.toLowerCase() || 'available';
           const glowColor = MaterialManager.getHoverGlowColor(status);
-          
+
           // Apply hover effect using MaterialManager
           MaterialManager.applyHoverEffect(m, glowColor, 0.3);
           hovered = m;
@@ -418,7 +433,7 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
       handleUserInteraction(); // Reset idle timer on click
       setMouseFromEvent(e, renderer);
       const hits = pickInteractive(camera);
-      
+
       if (!hits.length) {
         // Clicked on empty space - hide only info callouts (keep name callouts)
         clearCallouts();
@@ -427,15 +442,15 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
       }
 
       const clickedMesh = hits[0].object as THREE.Mesh;
-      
+
       // Check if this mesh has booth data
       const boothData = boothMeshMapRef.current.get(clickedMesh);
-      
+
       if (boothData) {
         // Check if this is the same booth that was clicked before
-        const isSameBooth = lastClickedBoothRef.current && 
-                           lastClickedBoothRef.current.id === boothData.id;
-        
+        const isSameBooth = lastClickedBoothRef.current &&
+          lastClickedBoothRef.current.id === boothData.id;
+
         if (isSameBooth && calloutsRef.current.length > 0) {
           // Second click on same booth - hide callout (toggle off)
           console.log(`🔄 Toggling OFF callout for booth ${boothData.id}`);
@@ -452,15 +467,15 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
 
     renderer.domElement.addEventListener("mousemove", e => onPointerMove(e, renderer, camera));
     renderer.domElement.addEventListener("click", e => onClick(e, renderer, camera));
-    
+
     // Load the appropriate model based on current area
     const modelPath = getModelPath(currentArea);
-    
+
     // Debug model loading
     console.log(`🏗️ Loading model: ${modelPath} for area: ${currentArea}`);
     console.log(`📁 PUBLIC_URL: ${process.env.PUBLIC_URL || 'undefined'}`);
     console.log(`🌐 Full model URL will be: ${window.location.origin}${modelPath}`);
-    
+
     // Check if file exists by making a HEAD request
     fetch(modelPath, { method: 'HEAD' })
       .then(response => {
@@ -475,7 +490,7 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
     console.log(`🌍 Will show ${areaData.booths.length} booths on this model`);
     currentModelRef.current = modelPath;
     initModel(modelPath);
-    
+
     // Initial camera positioning will be handled by the separate useEffect
 
 
@@ -491,7 +506,7 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
       animationRef.current = requestAnimationFrame(animate);
 
       controls.update();
-      
+
       // Log camera position and target every 1 second
       const now = Date.now();
       if (now - lastLogTime > 1000) {
@@ -501,10 +516,10 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
         console.log(`🎯 Camera Look-At: (${target.x.toFixed(2)}, ${target.y.toFixed(2)}, ${target.z.toFixed(2)})`);
         lastLogTime = now;
       }
-      
+
       // Update callout orientations (sprites auto-face camera)
       updateCalloutOrientations();
-      
+
       // Render WebGL scene with sprites
       renderer.render(scene, camera);
     };
@@ -527,11 +542,11 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
     return () => {
       // Clean up auto-tour
       stopAutoTour();
-      
+
       window.removeEventListener('resize', handleResize);
       renderer.domElement.removeEventListener("mousemove", e => onPointerMove(e, renderer, camera));
       renderer.domElement.removeEventListener("click", e => onClick(e, renderer, camera));
-      
+
       if (animationRef.current) {
         cancelAnimationFrame(animationRef.current);
       }
@@ -555,7 +570,7 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
 
     // Model is already loaded, just update booth mappings and colors
     console.log(`🔄 Area changed to ${areaData.areaId}, updating booth data without reloading model`);
-    
+
     const mapBoothMeshes = () => {
       if (!areaData || !sceneRef.current) return;
       MeshManager.mapBoothMeshes(sceneRef.current, areaData.booths, boothMeshMapRef.current, areaData.areaName);
@@ -578,21 +593,14 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [areaData?.areaId, areaData?.booths]); // React to area ID and booth changes
 
-  // Effect to handle camera positioning when area changes (skip individual halls)
+  // Effect to handle initial camera positioning when area changes
   useEffect(() => {
     if (!areaData || !cameraRef.current || !controlsRef.current) return;
 
-    // All areas now have camera positioning enabled
-    
-    // Function to focus camera for all areas using CameraAnimator
-    const focusCameraOnArea = (areaId: string, controls: OrbitControls, camera: THREE.Camera) => {
-      CameraAnimator.animateCameraToPosition(camera, controls, areaId, 1000);
-    };
-
-    // Focus camera after a short delay to ensure model is loaded (for all areas)
+    // Set starting camera position for the current area (no animation)
     const timer = setTimeout(() => {
-      focusCameraOnArea(currentArea, controlsRef.current!, cameraRef.current!);
-    }, 500);
+      CameraAnimator.setStartingCameraPosition(cameraRef.current!, controlsRef.current!, currentArea);
+    }, 300);
 
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -601,10 +609,10 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
   // Effect to handle exhibitor details toggle
   useEffect(() => {
     if (!areaData || boothMeshMapRef.current.size === 0) return;
-    
+
     // Clear all info callouts first
     clearCallouts();
-    
+
     if (showExhibitorDetails) {
       // Show only name callouts
       createAllNameCallouts();
@@ -618,7 +626,7 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
   // Effect to update booth colors when booth data changes
   useEffect(() => {
     if (!areaData || boothMeshMapRef.current.size === 0) return;
-    
+
     // Apply status colors whenever booth data changes
     applyBoothStatusColors();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -629,7 +637,7 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
     // Determine content based on booth status
     const isSoldOrReserved = CalloutManager.isSoldOrReserved(booth.status);
     const isAvailable = CalloutManager.isAvailable(booth.status);
-    
+
     // Get size multiplier using CalloutManager
     const sizeMultiplier = CalloutManager.getSizeMultiplier(currentArea, {
       isTechDays2026: currentArea === 'MainExhibitionHall',
@@ -637,9 +645,9 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
       isAllInOneOverview: currentArea === 'all_in_one',
       isAvailable: isAvailable
     });
-    
+
     let canvas: HTMLCanvasElement;
-    
+
     if (isSoldOrReserved) {
       // Show status (Sold/Reserved) and company name for sold or reserved booths using original format
       const statusText = CalloutManager.getFormattedStatusText(booth.status);
@@ -649,7 +657,7 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
       } else {
         formattedText += `\n\n${statusText}`; // Just status
       }
-      
+
       canvas = CanvasTextRenderer.createMultiLineTextCanvas({
         lines: formattedText.split('\n'),
         titleFontSize: 22 * sizeMultiplier,
@@ -704,11 +712,11 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
         }
       });
     }
-    
+
     // Create texture from canvas
     const texture = new THREE.CanvasTexture(canvas);
     texture.needsUpdate = true;
-    
+
     // Create sprite material
     const material = new THREE.SpriteMaterial({
       map: texture,
@@ -716,24 +724,24 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
       alphaTest: 0.1,
       sizeAttenuation: true
     });
-    
+
     // Create sprite
     const sprite = new THREE.Sprite(material);
     sprite.position.copy(position);
-    
+
     // Scale the sprite appropriately - increased by 2x
     // Adjust scale based on canvas aspect ratio to maintain proper proportions
     const baseScale = 0.8 * sizeMultiplier; // Increased from 0.4 to 0.8 (2x larger)
     const aspectRatio = canvas.height / canvas.width;
     sprite.scale.set(baseScale, baseScale * aspectRatio, 1);
-    
+
     // Store booth data for reference
     sprite.userData.booth = booth;
     sprite.userData.isTechDays2026 = currentArea === 'MainExhibitionHall';
-    
+
     // Log creation using CalloutManager
     CalloutManager.logCalloutCreation(booth.id, 'info', currentArea, sizeMultiplier, isAvailable);
-    
+
     return sprite;
   };
 
@@ -741,11 +749,11 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
   const createBoothNameCallout = (booth: any, position: THREE.Vector3): THREE.Sprite => {
     // Get sprite size multiplier using CalloutManager
     const spriteSizeMultiplier = CalloutManager.getNameCalloutSizeMultiplier(currentArea);
-    
+
     // For names longer than 10 characters, enable multi-line wrapping
     const shouldWrap = booth.name.length > 10;
     const displayName = booth.name; // Don't truncate, let it wrap instead
-    
+
     // Create canvas texture for name callout with flexible width
     const canvas = CanvasTextRenderer.createTextCanvas({
       text: displayName,
@@ -761,11 +769,11 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
       textAlign: 'center',
       lineHeight: 1.3 // Slightly more spacing for multi-line text
     });
-    
+
     // Create texture from canvas
     const texture = new THREE.CanvasTexture(canvas);
     texture.needsUpdate = true;
-    
+
     // Create sprite material
     const material = new THREE.SpriteMaterial({
       map: texture,
@@ -773,28 +781,28 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
       alphaTest: 0.1,
       sizeAttenuation: true
     });
-    
+
     // Create sprite
     const sprite = new THREE.Sprite(material);
     sprite.position.copy(position);
-    
+
     // Scale the sprite - increased by 2x overall
     // Maintain proper aspect ratio for text readability
     const baseScale = 0.5 * spriteSizeMultiplier; // Increased from 0.25 to 0.5 (2x larger)
     const aspectRatio = canvas.height / canvas.width;
     sprite.scale.set(baseScale, baseScale * aspectRatio, 1);
-    
+
     // Store booth data for reference
     sprite.userData.booth = booth;
     sprite.userData.isNameCallout = true;
     sprite.userData.isMainExhibitionHall = currentArea === 'MainExhibitionHall';
-    
+
     // Log creation using CalloutManager
     CalloutManager.logCalloutCreation(booth.id, 'name', currentArea, spriteSizeMultiplier, undefined, displayName);
-    
+
     return sprite;
   };
-  
+
   // Function to clear existing callouts
   const clearCallouts = () => {
     if (sceneRef.current) {
@@ -816,7 +824,7 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
     if (!areaData) return;
 
     MaterialManager.applyBoothStatusColors(boothMeshMapRef.current, areaData.booths, areaData.areaName);
-    
+
     // Color any unmapped meshes that match booth patterns as available (green)
     if (sceneRef.current) {
       MaterialManager.applyDefaultColorsToUnmappedMeshes(sceneRef.current, boothMeshMapRef.current);
@@ -828,10 +836,10 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
     if (!areaData || !sceneRef.current) return;
 
     console.log(`🏢 Creating name callouts for ${areaData.areaName}`);
-    
+
     // Clear existing name callouts
     clearNameCallouts();
-    
+
     // Create name callouts for all booths that have names and matching meshes
     boothMeshMapRef.current.forEach((booth, mesh) => {
       // Only create name callout if booth has a name
@@ -839,15 +847,15 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
         // Create name callout position using CalloutManager
         const nameCalloutPosition = CalloutManager.createCalloutPosition(mesh, currentArea, 'name');
         const nameCallout = createBoothNameCallout(booth, nameCalloutPosition);
-        
+
         if (sceneRef.current) {
           CalloutManager.addCalloutToScene(sceneRef.current, nameCallout, nameCalloutsRef.current);
         }
-        
+
         console.log(`    Added name callout for ${booth.id}: ${booth.name} (height offset: ${CalloutManager.getHeightOffset(currentArea, 'name')})`);
       }
     });
-    
+
     console.log(`  Created ${nameCalloutsRef.current.length} name callouts`);
   };
 
