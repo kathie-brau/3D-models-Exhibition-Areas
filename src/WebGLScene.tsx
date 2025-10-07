@@ -138,9 +138,13 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
     // Function to stop auto-tour
     const stopAutoTour = () => {
       if (autoTourActiveRef.current) {
-        console.log('⏹️ Auto-tour stopped due to user interaction');
+        console.log('✉️ Auto-tour stopped due to user interaction');
         autoTourActiveRef.current = false;
       }
+      
+      // Immediately stop any running auto-tour animations
+      CameraAnimator.stopAutoTourAnimations();
+      
       if (autoTourTimeoutRef.current) {
         clearTimeout(autoTourTimeoutRef.current);
         autoTourTimeoutRef.current = null;
@@ -151,8 +155,8 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
       }
     };
 
-    // Function to handle user interaction (resets idle timer) - only enables auto-tour for all_in_one model
-    const handleUserInteraction = () => {
+    // Function to handle genuine user interaction that should interrupt auto-tour
+    const handleGenuineUserInteraction = () => {
       lastInteractionTimeRef.current = Date.now();
       stopAutoTour();
 
@@ -172,6 +176,31 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
         }, 500);
       }
     };
+    
+    // Function to handle camera changes (could be from user or auto-tour)
+    const handleCameraChange = () => {
+      // Don't interrupt auto-tour if camera changes are from auto-tour animations
+      if (!autoTourActiveRef.current) {
+        // Only update interaction time and start auto-tour timer if not during auto-tour
+        lastInteractionTimeRef.current = Date.now();
+        
+        // Clear existing timeout
+        if (autoTourTimeoutRef.current) {
+          clearTimeout(autoTourTimeoutRef.current);
+        }
+
+        // Only set auto-tour timeout for all_in_one model
+        if (currentArea === 'all_in_one') {
+          // Set new timeout for auto-tour
+          autoTourTimeoutRef.current = setTimeout(() => {
+            if (Date.now() - lastInteractionTimeRef.current >= 500) {
+              console.log('💤 User inactive for 500ms, starting auto-tour...');
+              startAutoTour();
+            }
+          }, 500);
+        }
+      }
+    };
 
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;      // smoothness
@@ -183,8 +212,8 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
     controlsRef.current = controls;     // Store controls reference
 
     // Add interaction listeners to controls
-    controls.addEventListener('start', handleUserInteraction); // When user starts interacting with controls
-    controls.addEventListener('change', handleUserInteraction); // When controls change
+    controls.addEventListener('start', handleGenuineUserInteraction); // When user starts interacting with controls
+    controls.addEventListener('change', handleCameraChange); // When controls change (could be user or auto-tour)
 
     // Function to map booth meshes to their data (for click handling)
     const mapBoothMeshes = () => {
@@ -358,7 +387,7 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
 
             // Start auto-tour timer after everything is initialized (only for all_in_one)
             setTimeout(() => {
-              handleUserInteraction();
+              handleCameraChange();
             }, 500);
           }, 100);
         }, 200); // Increased timeout to ensure transforms are applied
@@ -399,7 +428,7 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
 
     const onPointerMove = (e: MouseEvent, renderer: THREE.WebGLRenderer, camera: THREE.Camera) => {
       console.log("On pointer move");
-      handleUserInteraction(); // Reset idle timer on mouse movement
+      handleGenuineUserInteraction(); // Reset idle timer on mouse movement
       setMouseFromEvent(e, renderer);
       const hits = pickInteractive(camera);
 
@@ -430,7 +459,7 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
     };
 
     const onClick = (e: MouseEvent, renderer: THREE.WebGLRenderer, camera: THREE.Camera) => {
-      handleUserInteraction(); // Reset idle timer on click
+      handleGenuineUserInteraction(); // Reset idle timer on click
       setMouseFromEvent(e, renderer);
       const hits = pickInteractive(camera);
 

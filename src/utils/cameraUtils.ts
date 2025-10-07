@@ -17,6 +17,9 @@ interface CameraPosition {
  * Utility class for managing camera animations and positioning
  */
 export class CameraAnimator {
+  // Track active auto-tour animations for interruption
+  private static activeAutoTourAnimationId: number | null = null;
+  private static activeAutoTourMotionId: number | null = null;
   /**
    * Auto-tour positions - only for all_in_one model auto-tour
    */
@@ -43,6 +46,22 @@ export class CameraAnimator {
    * Auto-tour hall sequence (circular)
    */
   static readonly AUTO_TOUR_HALLS = ['all_in_one', 'B', 'C', 'E'];
+
+  /**
+   * Stop active auto-tour animations immediately
+   */
+  static stopAutoTourAnimations(): void {
+    if (this.activeAutoTourAnimationId !== null) {
+      cancelAnimationFrame(this.activeAutoTourAnimationId);
+      this.activeAutoTourAnimationId = null;
+      console.log('🛑 Auto-tour camera animation stopped');
+    }
+    if (this.activeAutoTourMotionId !== null) {
+      cancelAnimationFrame(this.activeAutoTourMotionId);
+      this.activeAutoTourMotionId = null;
+      console.log('🛑 Auto-tour circular motion stopped');
+    }
+  }
 
   /**
    * Animate camera to a specific position with smooth easing
@@ -83,6 +102,12 @@ export class CameraAnimator {
     const startTime = Date.now();
     
     const animateCamera = () => {
+      // Check if auto-tour animation was stopped (only for auto-tour)
+      if (isAutoTour && this.activeAutoTourAnimationId === null) {
+        console.log('📹 Auto-tour camera animation was stopped');
+        return;
+      }
+      
       const elapsed = Date.now() - startTime;
       animationProgress = Math.min(elapsed / duration, 1);
       
@@ -95,13 +120,31 @@ export class CameraAnimator {
       controls.update();
       
       if (animationProgress < 1) {
-        requestAnimationFrame(animateCamera);
-      } else if (onComplete) {
-        onComplete();
+        if (isAutoTour) {
+          this.activeAutoTourAnimationId = requestAnimationFrame(animateCamera);
+        } else {
+          requestAnimationFrame(animateCamera);
+        }
+      } else {
+        if (isAutoTour) {
+          this.activeAutoTourAnimationId = null;
+        }
+        if (onComplete) {
+          onComplete();
+        }
       }
     };
     
-    animateCamera();
+    if (isAutoTour) {
+      // Only stop camera animations, not circular motion, before starting new camera animation
+      if (this.activeAutoTourAnimationId !== null) {
+        cancelAnimationFrame(this.activeAutoTourAnimationId);
+        this.activeAutoTourAnimationId = null;
+      }
+      this.activeAutoTourAnimationId = requestAnimationFrame(animateCamera);
+    } else {
+      animateCamera();
+    }
   }
 
   /**
@@ -159,6 +202,15 @@ export class CameraAnimator {
     const startTime = Date.now();
     
     const circularMotion = () => {
+      // Check if auto-tour circular motion was stopped
+      if (this.activeAutoTourMotionId === null) {
+        console.log('🌀 Auto-tour circular motion was stopped');
+        // Re-enable controls if they were disabled
+        controls.enabled = controlsWereEnabled;
+        controls.update();
+        return;
+      }
+      
       const elapsed = Date.now() - startTime;
       const progress = Math.min(elapsed / duration, 1);
       
@@ -182,9 +234,11 @@ export class CameraAnimator {
           console.log(`🔄 Y-axis rotation progress: ${Math.floor(progress * 100)}%`);
         }
         
-        requestAnimationFrame(circularMotion);
+        this.activeAutoTourMotionId = requestAnimationFrame(circularMotion);
       } else {
         console.log('✅ Y-axis rotation complete');
+        
+        this.activeAutoTourMotionId = null;
         
         // Re-enable controls and ensure target is set correctly
         controls.enabled = controlsWereEnabled;
@@ -197,7 +251,12 @@ export class CameraAnimator {
       }
     };
     
-    circularMotion();
+    // Only stop camera animations, not circular motion, before starting circular motion
+    if (this.activeAutoTourAnimationId !== null) {
+      cancelAnimationFrame(this.activeAutoTourAnimationId);
+      this.activeAutoTourAnimationId = null;
+    }
+    this.activeAutoTourMotionId = requestAnimationFrame(circularMotion);
   }
 
   /**
