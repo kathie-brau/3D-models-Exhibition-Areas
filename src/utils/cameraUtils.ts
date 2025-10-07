@@ -28,7 +28,7 @@ export class CameraAnimator {
     'all_in_one': { x: 0.03, y: 7.2, z: 1.6, targetX: 0.03, targetY: 0.93, targetZ: -1.74 },
     'B': { x: 8.00, y: 3.81, z: -0.71, targetX: 6.85, targetY: -0.66, targetZ: -2.44 },
     'C': { x: 0.74, y: 3.47, z: 1.39, targetX: 0.76, targetY: 0.21, targetZ: -0.18 },
-    'E': { x: -3.31, y: 2.83, z: -0.21, targetX: -4.32, targetY: 0.78, targetZ: -1.57 }
+    'E': { x: -4.56, y: 3.51, z: -1.8, targetX: -4.81, targetY: 1.47, targetZ: -2.26 }
   };
 
   /**
@@ -50,7 +50,7 @@ export class CameraAnimator {
   /**
    * Stop active auto-tour animations immediately
    */
-  static stopAutoTourAnimations(): void {
+  static stopAutoTourAnimations(controls?: OrbitControls): void {
     if (this.activeAutoTourAnimationId !== null) {
       cancelAnimationFrame(this.activeAutoTourAnimationId);
       this.activeAutoTourAnimationId = null;
@@ -60,6 +60,13 @@ export class CameraAnimator {
       cancelAnimationFrame(this.activeAutoTourMotionId);
       this.activeAutoTourMotionId = null;
       console.log('🛑 Auto-tour circular motion stopped');
+      
+      // Re-enable controls if they were disabled by circular motion
+      if (controls) {
+        controls.enabled = true;
+        controls.update();
+        console.log('🔐 Controls re-enabled after stopping circular motion');
+      }
     }
   }
 
@@ -229,10 +236,10 @@ export class CameraAnimator {
         camera.lookAt(targetPos);
         controls.target.copy(targetPos);
         
-        // Log progress every 10%
-        if (Math.floor(progress * 10) !== Math.floor((progress - 0.1) * 10)) {
-          console.log(`🔄 Y-axis rotation progress: ${Math.floor(progress * 100)}%`);
-        }
+        // // Log progress every 10%
+        // if (Math.floor(progress * 10) !== Math.floor((progress - 0.1) * 10)) {
+        //   console.log(`🔄 Y-axis rotation progress: ${Math.floor(progress * 100)}%`);
+        // }
         
         this.activeAutoTourMotionId = requestAnimationFrame(circularMotion);
       } else {

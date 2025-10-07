@@ -72,6 +72,8 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
     const width = window.innerWidth;
     const height = window.innerHeight;
 
+    lastInteractionTimeRef.current = Date.now();
+
     // WebGL Scene setup
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0xffffff); // White background
@@ -106,8 +108,9 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
       const onAutoTourComplete = () => {
         if (autoTourActiveRef.current) {
           setTimeout(() => {
+            console.warn('Starting the tour in line 111');
             startAutoTour();
-          }, 100); // Small delay before moving to next hall
+          }, 200); // Small delay before moving to next hall
         }
       };
 
@@ -143,7 +146,7 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
       }
       
       // Immediately stop any running auto-tour animations
-      CameraAnimator.stopAutoTourAnimations();
+      CameraAnimator.stopAutoTourAnimations(controlsRef.current || undefined);
       
       if (autoTourTimeoutRef.current) {
         clearTimeout(autoTourTimeoutRef.current);
@@ -170,10 +173,11 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
         // Set new timeout for auto-tour
         autoTourTimeoutRef.current = setTimeout(() => {
           if (Date.now() - lastInteractionTimeRef.current >= 500) {
-            console.log('💤 User inactive for 500ms, starting auto-tour...');
+            console.log('💤 User inactive for 4 minutes, starting auto-tour...');
+            console.warn('Starting the tour in line 178');
             startAutoTour();
           }
-        }, 500);
+        }, 240000);
       }
     };
     
@@ -195,9 +199,10 @@ const WebGLScene: React.FC<WebGLSceneProps> = ({ areaData, currentArea, showExhi
           autoTourTimeoutRef.current = setTimeout(() => {
             if (Date.now() - lastInteractionTimeRef.current >= 500) {
               console.log('💤 User inactive for 500ms, starting auto-tour...');
+              console.warn('Starting the tour in line 203');
               startAutoTour();
             }
-          }, 500);
+          }, 240000);
         }
       }
     };

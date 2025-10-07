@@ -132,12 +132,12 @@ export async function fetchBoothInfoFromSheets(areaId: string): Promise<Map<stri
           color: getColorForStatus(normalizedStatus)
         };
         
-        console.log(`🏢 [${index}] Processing booth: ${id}`, {
-          status: `"${status}" → ${normalizedStatus}`,
-          name,
-          dimensions: `${width} × ${height}`,
-          totalArea: area
-        });
+        // console.log(`🏢 [${index}] Processing booth: ${id}`, {
+        //   status: `"${status}" → ${normalizedStatus}`,
+        //   name,
+        //   dimensions: `${width} × ${height}`,
+        //   totalArea: area
+        // });
         
         boothMap.set(id, booth);
       } else {
