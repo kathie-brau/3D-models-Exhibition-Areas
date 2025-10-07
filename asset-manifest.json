@@ -1,15 +1,15 @@
 {
   "files": {
     "main.css": "/3D-models-Exhibition-Areas/static/css/main.8a5c45ca.css",
-    "main.js": "/3D-models-Exhibition-Areas/static/js/main.7b76a05d.js",
+    "main.js": "/3D-models-Exhibition-Areas/static/js/main.c5f80346.js",
     "static/js/453.e08c4af0.chunk.js": "/3D-models-Exhibition-Areas/static/js/453.e08c4af0.chunk.js",
     "index.html": "/3D-models-Exhibition-Areas/index.html",
     "main.8a5c45ca.css.map": "/3D-models-Exhibition-Areas/static/css/main.8a5c45ca.css.map",
-    "main.7b76a05d.js.map": "/3D-models-Exhibition-Areas/static/js/main.7b76a05d.js.map",
+    "main.c5f80346.js.map": "/3D-models-Exhibition-Areas/static/js/main.c5f80346.js.map",
     "453.e08c4af0.chunk.js.map": "/3D-models-Exhibition-Areas/static/js/453.e08c4af0.chunk.js.map"
   },
   "entrypoints": [
     "static/css/main.8a5c45ca.css",
-    "static/js/main.7b76a05d.js"
+    "static/js/main.c5f80346.js"
   ]
 }
